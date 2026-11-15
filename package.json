@@ -1,0 +1,19 @@
+{
+  "name": "trimly",
+  "private": true,
+  "description": "Trimly - marketplace for barbers, salons, beauty parlours & grooming services",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "database"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=frontend",
+    "dev:api": "npm run start:dev --workspace=backend",
+    "build:web": "npm run build --workspace=frontend",
+    "build:api": "npm run build --workspace=backend",
+    "prisma:generate": "npm run generate --workspace=database",
+    "prisma:migrate": "npm run migrate:dev --workspace=database",
+    "prisma:studio": "npm run studio --workspace=database"
+  }
+}

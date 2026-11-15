@@ -1,0 +1,621 @@
+// Trimly — Prisma schema
+// Mirrors docs/Trimly-PRD-SRS-v1 updated.md §8 (Database Requirements).
+// Geo queries: lat/lng are plain Float columns here; the PostGIS GIST index
+// on businesses(lat,lng) referenced in §8 "Indexing priorities" must be added
+// via a raw-SQL migration (Prisma has no native geography type) — see
+// database/prisma/migrations/*_add_postgis/migration.sql once PostGIS is enabled.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  CUSTOMER
+  OWNER
+  STAFF
+  ADMIN
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  PHONE_OTP
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum BadgeType {
+  VERIFIED
+  TOP_RATED
+  PREMIUM_PARTNER
+  FEATURED
+}
+
+enum BadgeSource {
+  AUTOMATIC
+  SUBSCRIPTION
+  ADMIN
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  RESCHEDULED
+  CANCELLED
+  IN_PROGRESS
+  COMPLETED
+  REVIEWED
+  NO_SHOW
+}
+
+enum ServiceLocationType {
+  IN_SALON
+  HOME_SERVICE
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PortfolioMediaType {
+  PORTFOLIO
+  BEFORE_AFTER
+}
+
+enum WaitlistStatus {
+  WAITING
+  NOTIFIED
+  CLAIMED
+  EXPIRED
+}
+
+enum LoyaltyReason {
+  EARNED
+  REDEEMED
+  EXPIRED
+}
+
+enum ReferralStatus {
+  PENDING
+  REWARDED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FLAT
+}
+
+enum PlanTier {
+  FREE
+  PREMIUM
+  FEATURED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+}
+
+// ---------------------------------------------------------------------------
+// Core identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String       @id @default(uuid())
+  role         UserRole
+  name         String
+  phone        String?      @unique
+  email        String?      @unique
+  authProvider AuthProvider
+  createdAt    DateTime     @default(now())
+
+  customerProfile CustomerProfile?
+  addresses       Address[]
+  businesses      Business[]         @relation("BusinessOwner")
+  bookingsAsCustomer Booking[]       @relation("BookingCustomer")
+  reviews         Review[]
+  notifications   NotificationLog[]
+  auditLogs       AuditLog[]         @relation("AuditActor")
+  referralsMade   Referral[]         @relation("Referrer")
+  referralsReceived Referral[]       @relation("Referred")
+
+  @@index([role])
+  @@map("users")
+}
+
+// reliability/no-show fields per §4.5 No-Show Management
+model CustomerProfile {
+  userId              String   @id
+  walletBalance        Decimal  @default(0) @db.Decimal(12, 2)
+  reliabilityScore     Decimal  @default(100) @db.Decimal(5, 2)
+  noShowCountRolling   Int      @default(0)
+  requiresPrepayment   Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([reliabilityScore])
+  @@map("customer_profiles")
+}
+
+// supports multiple saved addresses for home service
+model Address {
+  id               String  @id @default(uuid())
+  userId           String
+  label            String
+  lat              Float
+  lng              Float
+  formattedAddress String
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ---------------------------------------------------------------------------
+// Geography
+// ---------------------------------------------------------------------------
+
+model City {
+  id       String  @id @default(uuid())
+  name     String
+  state    String?
+  country  String  @default("India")
+  isActive Boolean @default(true)
+
+  businesses        Business[]
+  homeServiceAreas  HomeServiceArea[]
+
+  @@unique([name, state])
+  @@map("cities")
+}
+
+// ---------------------------------------------------------------------------
+// Business (salon / barbershop / parlour)
+// ---------------------------------------------------------------------------
+
+model Business {
+  id                  String             @id @default(uuid())
+  ownerUserId         String
+  name                String
+  category            String
+  gstNumber           String?
+  description         String?
+  verificationStatus  VerificationStatus @default(PENDING)
+  lat                 Float
+  lng                 Float
+  cityId              String
+  workingHours        Json
+  // §4.3: { freeCancellationHours: number, penaltyPercent: number (0-100) }.
+  // Null falls back to the platform default applied in application code.
+  cancellationPolicy  Json?
+  createdAt           DateTime           @default(now())
+
+  owner        User                   @relation("BusinessOwner", fields: [ownerUserId], references: [id])
+  city         City                   @relation(fields: [cityId], references: [id])
+  trustBadges  BusinessTrustBadge[]
+  media        BusinessMedia[]
+  services     Service[]
+  staff        Staff[]
+  bookings     Booking[]
+  reviews      Review[]
+  coupons      Coupon[]
+  subscriptions Subscription[]
+  homeServiceAreas HomeServiceArea[]
+  waitlistEntries  WaitlistEntry[]
+
+  // Postgres full-text + PostGIS geo-index target — see schema header note.
+  @@index([lat, lng])
+  @@index([verificationStatus])
+  @@index([cityId])
+  @@map("businesses")
+}
+
+// normalized rather than a flag array — each badge has its own award/expiry
+// logic and audit trail (see docs ADR-006)
+model BusinessTrustBadge {
+  id         String      @id @default(uuid())
+  businessId String
+  badgeType  BadgeType
+  awardedAt  DateTime    @default(now())
+  expiresAt  DateTime?
+  source     BadgeSource
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, badgeType])
+  @@map("business_trust_badges")
+}
+
+model BusinessMedia {
+  id         String    @id @default(uuid())
+  businessId String
+  url        String
+  type       MediaType
+  order      Int       @default(0)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("business_media")
+}
+
+// supports Men/Women/Unisex/Spa hierarchy
+model Category {
+  id       String     @id @default(uuid())
+  name     String
+  parentId String?
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
+  services Service[]
+
+  @@map("categories")
+}
+
+model Service {
+  id              String   @id @default(uuid())
+  businessId      String
+  categoryId      String?
+  name            String
+  price           Decimal  @db.Decimal(10, 2)
+  durationMinutes Int
+  description     String?
+  active          Boolean  @default(true)
+
+  business        Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category        Category?       @relation(fields: [categoryId], references: [id])
+  bookings        Booking[]
+  waitlistEntries WaitlistEntry[]
+
+  @@index([businessId])
+  @@map("services")
+}
+
+// ---------------------------------------------------------------------------
+// Staff
+// ---------------------------------------------------------------------------
+
+model Staff {
+  id                 String   @id @default(uuid())
+  businessId         String
+  name               String
+  experienceYears    Int?
+  specializations    String[]
+  languages          String[]
+  photoUrl           String?
+  averageRating       Decimal? @db.Decimal(3, 2)
+  // reserved for §7.5 home-service future-proofing — unused at MVP
+  homeServiceCapable Boolean  @default(false)
+  active             Boolean  @default(true)
+
+  business        Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  certifications  StaffCertification[]
+  portfolioMedia  StaffPortfolioMedia[]
+  availability    StaffAvailability[]
+  availabilityOverrides StaffAvailabilityOverride[]
+  bookings        Booking[]
+  reviews         Review[]
+  waitlistEntries WaitlistEntry[]
+
+  @@index([businessId])
+  @@map("staff")
+}
+
+// self-reported badges — not independently verified by the platform at MVP
+model StaffCertification {
+  id           String  @id @default(uuid())
+  staffId      String
+  name         String
+  issuingBody  String?
+  documentUrl  String?
+  selfReported Boolean @default(true)
+
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+  @@map("staff_certifications")
+}
+
+model StaffPortfolioMedia {
+  id             String             @id @default(uuid())
+  staffId        String
+  url            String
+  type           PortfolioMediaType
+  // links a before photo to its after photo
+  pairedMediaId  String?            @unique
+  linkedBookingId String?
+
+  staff        Staff                 @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  pairedMedia  StaffPortfolioMedia?  @relation("BeforeAfterPair", fields: [pairedMediaId], references: [id])
+  pairedWith   StaffPortfolioMedia?  @relation("BeforeAfterPair")
+  linkedBooking Booking?             @relation(fields: [linkedBookingId], references: [id])
+
+  @@index([staffId])
+  @@map("staff_portfolio_media")
+}
+
+// recurring weekly availability, modeled separately from date-specific
+// overrides (holidays, one-off closures) per §8
+model StaffAvailability {
+  id        String @id @default(uuid())
+  staffId   String
+  dayOfWeek Int // 0 = Sunday .. 6 = Saturday
+  startTime String // "HH:mm"
+  endTime   String // "HH:mm"
+
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, dayOfWeek])
+  @@map("staff_availability")
+}
+
+model StaffAvailabilityOverride {
+  id           String   @id @default(uuid())
+  staffId      String
+  specificDate DateTime @db.Date
+  startTime    String?  // "HH:mm", null when isClosed
+  endTime      String?
+  isClosed     Boolean  @default(false)
+
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, specificDate])
+  @@map("staff_availability_overrides")
+}
+
+// ---------------------------------------------------------------------------
+// Booking
+// ---------------------------------------------------------------------------
+
+// location-agnostic booking schema — §7.5 / ADR-004: serviceLocationType +
+// addressId are reserved now so Home Service (V2) needs no later migration.
+model Booking {
+  id                  String              @id @default(uuid())
+  customerId          String
+  businessId          String
+  staffId             String?
+  serviceId           String
+  slotStart           DateTime
+  slotEnd             DateTime
+  status              BookingStatus       @default(PENDING)
+  serviceLocationType ServiceLocationType @default(IN_SALON)
+  addressId           String?
+  otpHash             String?
+  cancellationReason  String?
+  noShowReasonCode    String?
+  createdAt           DateTime            @default(now())
+
+  customer User      @relation("BookingCustomer", fields: [customerId], references: [id])
+  business Business  @relation(fields: [businessId], references: [id])
+  staff    Staff?    @relation(fields: [staffId], references: [id])
+  service  Service   @relation(fields: [serviceId], references: [id])
+  address  Address?  @relation(fields: [addressId], references: [id])
+  payment  Payment?
+  review   Review?
+  waitlistClaims WaitlistEntry[]
+  portfolioMedia StaffPortfolioMedia[]
+  loyaltyEntries LoyaltyPointsLedger[]
+
+  // composite index for the booking-collision check
+  @@index([businessId, slotStart, status])
+  @@index([customerId])
+  @@index([staffId, slotStart])
+  @@map("bookings")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  bookingId       String        @unique
+  provider        String        @default("razorpay")
+  providerOrderId String?
+  amount          Decimal       @db.Decimal(10, 2)
+  status          PaymentStatus @default(CREATED)
+  refundAmount    Decimal?      @db.Decimal(10, 2)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Reviews
+// ---------------------------------------------------------------------------
+
+// review submission gated to COMPLETED bookings at the application layer;
+// the 1:1 unique FK to bookingId prevents duplicate/fake reviews at the
+// data-model level per §4.4
+model Review {
+  id          String   @id @default(uuid())
+  bookingId   String   @unique
+  customerId  String
+  businessId  String
+  staffId     String?
+  rating      Int
+  staffRating Int?
+  text        String?
+  createdAt   DateTime @default(now())
+
+  booking  Booking       @relation(fields: [bookingId], references: [id])
+  customer User          @relation(fields: [customerId], references: [id])
+  business Business      @relation(fields: [businessId], references: [id])
+  staff    Staff?        @relation(fields: [staffId], references: [id])
+  media    ReviewMedia[]
+
+  @@index([businessId])
+  @@map("reviews")
+}
+
+model ReviewMedia {
+  id       String    @id @default(uuid())
+  reviewId String
+  url      String
+  type     MediaType
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@map("review_media")
+}
+
+// ---------------------------------------------------------------------------
+// Growth / commerce
+// ---------------------------------------------------------------------------
+
+model Coupon {
+  id           String       @id @default(uuid())
+  code         String       @unique
+  discountType DiscountType
+  value        Decimal      @db.Decimal(10, 2)
+  businessId   String? // platform-wide if null
+  validFrom    DateTime
+  validTo      DateTime
+  usageLimit   Int?
+
+  business Business? @relation(fields: [businessId], references: [id])
+
+  @@map("coupons")
+}
+
+// feeds business_trust_badges where source = SUBSCRIPTION
+model Subscription {
+  id         String             @id @default(uuid())
+  businessId String
+  planTier   PlanTier           @default(FREE)
+  status     SubscriptionStatus @default(ACTIVE)
+  renewedAt  DateTime?
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("subscriptions")
+}
+
+// [V2] fields — reserved in schema now per §7.5
+model HomeServiceArea {
+  id              String  @id @default(uuid())
+  businessId      String
+  cityId          String
+  radiusKm        Decimal? @db.Decimal(6, 2)
+  polygon         Json?
+  travelFeeBase   Decimal  @db.Decimal(10, 2)
+  travelFeePerKm  Decimal  @db.Decimal(10, 2)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  city     City     @relation(fields: [cityId], references: [id])
+
+  @@index([businessId])
+  @@map("home_service_areas")
+}
+
+// supports §4.6 Waitlist System
+model WaitlistEntry {
+  id                String          @id @default(uuid())
+  customerId        String
+  businessId        String
+  serviceId         String
+  staffId           String?
+  desiredDate       DateTime        @db.Date
+  desiredTimeWindow String
+  status            WaitlistStatus  @default(WAITING)
+  notifiedAt        DateTime?
+  claimedBookingId  String?
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id])
+  staff    Staff?   @relation(fields: [staffId], references: [id])
+  claimedBooking Booking? @relation(fields: [claimedBookingId], references: [id])
+
+  @@index([businessId, desiredDate, status])
+  @@map("waitlist_entries")
+}
+
+// ledger-style rather than a single mutable balance so history is auditable
+model LoyaltyPointsLedger {
+  id          String        @id @default(uuid())
+  customerId  String
+  bookingId   String?
+  pointsDelta Int
+  reason      LoyaltyReason
+  createdAt   DateTime      @default(now())
+
+  booking Booking? @relation(fields: [bookingId], references: [id])
+
+  @@index([customerId])
+  @@map("loyalty_points_ledger")
+}
+
+model Referral {
+  id                 String         @id @default(uuid())
+  referrerUserId     String
+  referredUserId     String         @unique
+  status             ReferralStatus @default(PENDING)
+  rewardCreditedAt   DateTime?
+
+  referrer User @relation("Referrer", fields: [referrerUserId], references: [id])
+  referred User @relation("Referred", fields: [referredUserId], references: [id])
+
+  @@index([referrerUserId])
+  @@map("referrals")
+}
+
+// ---------------------------------------------------------------------------
+// Platform
+// ---------------------------------------------------------------------------
+
+model NotificationLog {
+  id       String   @id @default(uuid())
+  userId   String
+  channel  String // sms | push | email | whatsapp
+  template String
+  status   String
+  sentAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("notifications_log")
+}
+
+// required for verification decisions, cancellations, refunds, no-show
+// flags, and badge awards — needed for dispute resolution, do not skip
+model AuditLog {
+  id           String   @id @default(uuid())
+  actorUserId  String
+  action       String
+  entityType   String
+  entityId     String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  actor User @relation("AuditActor", fields: [actorUserId], references: [id])
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}

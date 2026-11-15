@@ -1,0 +1,340 @@
+# Trimly — Build Progress Log
+
+Chronological record of work done on this repo. Newest entries at the top.
+Each session should add an entry *before* starting new work (so there's a
+record even if interrupted) and fill it in as work completes. See
+`CLAUDE.md` for the "why"/architecture context this log doesn't repeat.
+
+---
+
+## 2026-11-15 (3) — Search fixes, owner salon-management page, admin verification console
+
+**Status: done.** Follow-up to the previous two entries, addressing a batch of
+four user-reported issues in one pass:
+
+- **"Open now" filter pill was stretched full-width** — `SearchBar.tsx` had
+  `flex-1` on its `<label>`; changed to `shrink-0` so it sizes to its content.
+- **Bottom-tab "Search" button did nothing** — it linked to
+  `/?focus=search`, a query param nothing read. Replaced with real free-text
+  search: added `q` to `searchBusinessesSchema`
+  (`backend/.../dto/search-businesses.dto.ts`) and a case-insensitive
+  `name` filter in `candidateBusinesses()`
+  (`backend/.../businesses.service.ts`); `SearchBar.tsx` now has an actual
+  text input + Search button wired to that param, and the mobile tab links
+  to `/#search` (anchor-scrolls to the existing `id="search"` section
+  instead of a dead param).
+- **Owner salon management page** (new `frontend/src/app/owner/manage/page.tsx`,
+  linked from `/owner`): lets an owner add/view services, staff, and
+  photos for their salon. Backend gained `addMedia`/`removeMedia` on
+  `BusinessesService` + a new `dto/media.dto.ts`
+  (`{ url: string().url(), type: 'IMAGE'|'VIDEO' }`) + `POST
+  /owner/businesses/:id/media` and `DELETE
+  /owner/businesses/:id/media/:mediaId` on `OwnerBusinessesController`, plus
+  a `findForOwner()` service method + `GET /owner/businesses/:id` endpoint
+  (full detail incl. services/staff/media, unlike the public `findById`
+  which 404s anything not yet `VERIFIED`). No file upload exists — owners
+  paste an image URL (a "try a placeholder" button fills in a picsum.photos
+  one). The page shows a verification-status banner explaining that
+  customers won't see the salon until an admin verifies it — this gating
+  already existed server-side (`verificationStatus` defaults to `PENDING`,
+  customer search only returns `VERIFIED`); this page is the first UI that
+  surfaces it to the owner.
+- **Admin console** (new `frontend/src/app/admin/page.tsx`): deliberately
+  distinct dark/slate/monospace styling per the user's explicit request
+  ("totally different from the current 2"). Shows live stats
+  (pending/verified/rejected business counts, customer/owner/booking
+  counts — new `AdminService.stats()` + `GET /admin/stats`) and the
+  verification queue (`GET /admin/businesses/pending`, enriched to include
+  `services`/`staff`/`city` so an admin can actually judge a listing, not
+  just its name) with inline Verify/Reject actions
+  (`POST /admin/businesses/:id/verify`, already existed). Also added `GET
+  /admin/businesses/verified` (`AdminService.verifiedBusinesses()`) for
+  later use, not yet surfaced in the UI.
+  - Admin can't self-register (role is restricted to `CUSTOMER`/`OWNER` at
+    signup, FR-1.2) — seeded a real admin account directly in
+    `database/prisma/seed.js` (`+919800000099`, role `ADMIN`) so there's
+    something to log in with. Logging in with an *existing* phone ignores
+    whatever role the login form sends (role is only read on first
+    creation), so this logs in fine through the normal OTP flow with the
+    normal login page.
+  - Post-login redirect (`login/page.tsx`) and the `/account` page's
+    role-guard now also handle `ADMIN` → `/admin`, alongside the existing
+    `OWNER`/`CUSTOMER` split. `MobileTabBar.tsx` and `Nav.tsx` updated the
+    same way (both needed it, per the standing note in `CLAUDE.md` about
+    that bug shipping once already from only fixing one of the two).
+- Verified the whole chain end-to-end with a throwaway owner account +
+  business: create → add media/service/staff → confirm it's invisible to
+  search while `PENDING` → admin verify → confirm it now appears in
+  `q`-filtered search results → deleted the throwaway data afterward.
+  (Left alone: a real `Temp 1` business/owner that already existed in the
+  dev DB from the user's own manual testing — not mine to delete.)
+
+## 2026-11-15 (2) — Customer account page + a codebase-wide validation-pipe bug fix
+
+**Status: done.** Follow-up session: built the customer account/booking-history
+page the user asked for, and in doing so found and fixed a real bug that was
+silently breaking almost every mutating endpoint in the backend.
+
+### The bug (now fixed everywhere)
+
+Every controller validated its DTO with method-level `@UsePipes(new
+ZodValidationPipe(schema))` above a handler that also had `@CurrentUser()`
+and/or `@Param()` parameters. In NestJS, a method-level `@UsePipes()" runs
+the pipe against **every** parameter, not just `@Body()`. Zod then validated
+things like the JWT user object or a route `:id` string against the booking/
+business schema and always failed — so any handler with more than one
+parameter was broken. It only happened to work on `auth.controller.ts`'s two
+routes because those handlers take a single `@Body()` param and nothing else.
+This had never been caught because the backend had never been run against a
+live DB with real requests until today's earlier session (build/lint/boot
+checks don't exercise request validation).
+
+**Confirmed broken before the fix**: `POST /bookings` (booking creation),
+`GET /businesses/:id/availability`, `POST/PATCH` everything in
+`owner-businesses.controller.ts` (the entire owner salon-setup flow —
+create business, update, add/update service, add/update staff), `POST
+/bookings/:id/{cancel,reschedule,complete}`, `PATCH /bookings/:id/no-show`,
+`POST /admin/businesses/:id/verify`, `POST /reviews`. Essentially every
+write endpoint except OTP send/verify.
+
+**Fix**: moved every `ZodValidationPipe` instance from the method-level
+`@UsePipes()` to the specific parameter it validates —
+`@Body(new ZodValidationPipe(schema)) dto: Dto` / `@Query(new
+ZodValidationPipe(schema)) query: Dto` — and removed the now-unused
+`@UsePipes` imports. Applied to every controller, including
+`auth.controller.ts` (not currently broken, but the same anti-pattern —
+fixed pre-emptively so adding a second param there later can't
+reintroduce this). **Convention going forward, now in `CLAUDE.md`: always
+bind `ZodValidationPipe` to the specific parameter, never at the method
+level.**
+
+Verified via real HTTP requests after the fix (not just compile/lint):
+booking creation, availability lookup, booking cancel, and a brand-new
+owner signup → create-salon flow all exercised end-to-end successfully.
+`npx tsc --noEmit` and `oxlint` both clean on the backend afterward.
+
+### What was built
+
+- **Backend**: added `GET /bookings/me` (`BookingsController.findMine` /
+  `BookingsService.findForCustomer`) — there was previously no way for a
+  customer to list their own bookings at all, which is what the account
+  page needed.
+- **Frontend**: new `/account` page (`src/app/account/page.tsx`) — profile
+  card with inline name editing (`PATCH /users/me`), reliability score
+  display, Upcoming/Past booking tabs, cancel action for upcoming
+  bookings, and an inline star-rating review form for completed-but-
+  unreviewed bookings (`POST /reviews`).
+- Fixed a real routing bug in `MobileTabBar.tsx`: the profile tab sent
+  every logged-in user (including customers) to `/owner`, which then
+  bounced customers straight back to `/login` since that page gates on
+  `role === 'OWNER'`. Now routes by role (`/account` for customers,
+  `/owner` for owners).
+- `Nav.tsx` gained a "My account" link for customers (desktop nav), to go
+  with the existing "My salon" link for owners.
+- `/login` now redirects by role after verifying OTP (`/owner` vs
+  `/account`) instead of always going to `/`, unless an explicit `?next=`
+  was set (e.g. from the booking flow).
+- `/owner` dashboard gained a small "Signed in as X / Sign out" header —
+  it previously had no sign-out affordance at all.
+- `/salons/[id]/book`'s confirmation screen now links to `/account`
+  ("View my bookings") in addition to "Back to home".
+- Added `MyBooking`/`BookingStatus` types to `lib/types.ts`.
+
+### Not verified
+
+- Still no browser-automation tool in this session — verified entirely via
+  direct HTTP requests (curl/node fetch) against the running dev servers,
+  plus `tsc`/lint. The user is browsing the live dev server themselves
+  during this session (visible in the frontend dev-server log), so this is
+  lower-risk than last session's UI pass, but a real visual/mobile check
+  is still worth doing.
+
+### Next steps
+
+- Visual QA of the new `/account` page at phone width.
+- `git add` + first commit — still not done.
+
+---
+
+## 2026-11-15 — First real end-to-end run + mobile-first UI pass + dummy salon data
+
+**Status: done.** First time this repo has run against a live Postgres/Redis
+and been looked at in an actual browser.
+
+### What was done
+
+- **Docker Desktop installed** on this machine (via `winget`) since it
+  wasn't present — WSL2 backend, already-existing `wsl --status` showed
+  WSL2 was set up. `docker compose up -d` now brings up Postgres 16 +
+  Redis 7 as `docker-compose.yml` already specified.
+- **First real migrate + seed**: `npx prisma migrate dev --name init` run
+  for the first time against a live DB (previously only `prisma validate`
+  had been run). Confirmed both `npm run dev:api` (port 4000, `/api/health`
+  OK) and `npm run dev:web` (port 3000) boot cleanly end-to-end.
+- **Found and fixed a real styling bug**: the user's first screenshot
+  showed a broken half-white/half-black page (faint grey logo, unreadable
+  hero text). Root cause — `globals.css` had a bare `body { background:
+  var(--background) }` rule outside any `@layer`, plus a
+  `prefers-color-scheme: dark` media query flipping `--background`/
+  `--foreground` to near-black/near-white. In Tailwind v4, utility classes
+  are wrapped in `@layer`, so that unlayered `body` rule silently beat
+  `bg-neutral-50`/`text-neutral-900` on `<body>` whenever the OS was in
+  dark mode — and no component in the app had been designed with a dark
+  variant. Fixed by deleting the dark-mode auto-switch entirely and
+  defining one deliberate light brand palette as CSS variables in
+  `globals.css` (`--brand` orange, `--accent` teal, `--surface`/`--border`/
+  `--muted` neutrals) wired through Tailwind v4's `@theme inline`.
+- **Mobile-first redesign** (PRD explicitly targets mobile-only users):
+  added `components/MobileTabBar.tsx` (fixed bottom nav, hidden ≥ `sm`,
+  inline SVG icons, safe-area padding via a `.pb-safe` utility), slimmed
+  `Nav.tsx` to a logo-only bar on mobile (full nav restored ≥ `sm`),
+  rebuilt `SearchBar.tsx` as horizontally-scrollable category chips plus a
+  prominent "Near me" button, redesigned `BusinessCard.tsx` (open/closed
+  badge overlay on the photo, colour-coded trust-badge chips, rating
+  pill), reworked the home page with a dark hero band + search, reworked
+  `/salons/[id]` with a horizontal-scroll photo strip on mobile and a
+  sticky bottom "Book now" bar, bumped touch targets and added a sticky
+  confirm button on `/salons/[id]/book`, and gave `/login` and `/owner`
+  the same brand/touch-target treatment for consistency.
+- **Dummy salon data**: `database/prisma/seed.js` rewritten from
+  one-salon-only to a 12-salon catalogue across two city clusters (Mumbai —
+  matching the app's fallback coordinates — and Bangalore, matching the
+  real geolocation in the user's first screenshot), covering all four
+  categories, each with services, staff + weekly availability, trust
+  badges, placeholder photos (`picsum.photos` seeded URLs — not real salon
+  photography), and reviews backed by genuine dummy *completed bookings*
+  (not just bare `Review` rows) so ratings/review counts populate exactly
+  the way a real booking would produce them. The original hand-made "Style
+  Studio Unisex Salon" business was deleted and recreated via the same
+  array so it carries reviews/media too.
+- Verified via: `GET /api/search/businesses` for both city centers (6 and
+  5 results respectively), `curl` 200s on `/`, `/salons/[id]`, and a clean
+  Turbopack compile with no errors in the dev-server log.
+
+### Not verified
+
+- No browser-automation tool was available in this session, so the
+  redesign was **not** visually confirmed in an actual browser — only via
+  API responses, HTTP status codes, and the dev-server compile log.
+  Whoever picks this up next (or the user, right after this) should open
+  `http://localhost:3000` and sanity-check the mobile layout at a real
+  phone width before trusting it further.
+
+### Next steps
+
+- Visual QA pass in a real/emulated mobile browser.
+- `git add` + first commit — still not done, same as last session.
+
+---
+
+## 2026-09-09 — Initial monorepo scaffold (web MVP)
+
+**Status: done.** Full project skeleton stood up from an empty repo (only
+`docs/` had content — the PRD). User chose web-first (per the PRD's own
+recommendation) and a full skeleton rather than a single vertical slice.
+
+### What was built
+
+- **Repo/tooling**: git initialized; npm workspaces monorepo
+  (`frontend`, `backend`, `database`); root `package.json` with convenience
+  scripts; root `.gitignore` (verified `.env*` and `node_modules` are
+  correctly excluded); `docker-compose.yml` for local Postgres 16 + Redis 7.
+- **`database/`**: Prisma schema (`prisma/schema.prisma`) implementing the
+  full data model from PRD §8 — all entities (users, businesses, staff,
+  bookings, payments, reviews, coupons, subscriptions, waitlist, loyalty
+  ledger, referrals, audit log, home-service-reserved fields, etc.), enums,
+  and the indexing priorities called out in the PRD. Pinned to Prisma
+  6.19.3 after discovering `latest` resolves to an incompatible 8.0.0-rc
+  (see `CLAUDE.md`). Seed script (`prisma/seed.js`) creates one city, one
+  verified demo salon with services/staff/availability, one owner and one
+  customer user.
+- **`backend/`** (NestJS 12): scaffolded via `@nestjs/cli`, then built out:
+  - Config: Zod-validated env schema (fails fast on bad config), including
+    configurable search-ranking weights per an explicit PRD AC.
+  - Prisma integration via the `database` workspace package (see
+    `CLAUDE.md` for why a direct `@prisma/client` dependency doesn't work
+    across these workspaces).
+  - Redis integration (`RedisModule`, global) + `SlotLockService`
+    implementing the §7.3 short-TTL slot-hold lock with token-based safe
+    release.
+  - Auth module: phone-OTP send/verify, hashed+rate-limited+attempt-capped
+    per FR-1.1's explicit ACs, JWT issuance, role fixed at first signup.
+  - Common infra: `JwtAuthGuard` + `RolesGuard` (global, opt-out via
+    `@Public()`), `ZodValidationPipe`, global `HttpExceptionFilter` for a
+    consistent error envelope, `@CurrentUser()` decorator.
+  - Businesses module: geo search (bounding-box + Haversine, weighted
+    ranking, empty-result filter-relaxation per FR-2.1's AC), public salon
+    profile + availability computation (weekly availability minus
+    overrides minus existing bookings, sliced by service duration), owner
+    CRUD for business/services/staff, owner dashboard (today's
+    bookings/revenue/cancellations).
+  - Bookings module: full state machine — create (slot lock, "any staff"
+    auto-assignment, reliability-based forced prepayment, OTP generation),
+    cancel (§4.3 cancellation-policy refund calc, §4.6 waitlist notify),
+    reschedule (atomic slot swap), complete (OTP-verified), no-show
+    (owner-only, reason-coded, rolling 90-day reliability recompute per
+    ADR-005).
+  - Reviews module: booking-linked, completed-only, one-per-booking.
+  - Admin module: business verification (awards the `VERIFIED` trust
+    badge), city/category management, flagged-reviews listing (lightweight
+    MVP version).
+  - Catalog module: public read-only cities/categories for frontend forms.
+  - Payments module: Razorpay webhook with real HMAC signature
+    verification (order-creation call itself still a TODO).
+  - Users module: `GET/PATCH /users/me`.
+  - Verified via `npm run build`, `npm run lint` (oxlint), and a real boot
+    smoke-test (`node dist/main.js`) — this caught two real bugs: a
+    `SlotLockService` DI-export bug and an ESM circular-import bug between
+    `redis.module.ts`/`slot-lock.service.ts` (both documented in
+    `CLAUDE.md` so they don't get reintroduced).
+- **`frontend/`** (Next.js 16.3.4 — noted as a genuinely breaking-change
+  version from what's commonly assumed, see `CLAUDE.md`): scaffolded via
+  `create-next-app`, then built out:
+  - `lib/api.ts` (typed fetch wrapper + `ApiError`), `lib/types.ts`,
+    `lib/auth-client.ts` (localStorage session helpers).
+  - `components/Nav.tsx`, `SearchBar.tsx` (geolocation + manual-fallback
+    coordinates, category/open-now filters via URL search params),
+    `BusinessCard.tsx`.
+  - Pages: `/` (SSR search/home, reads `searchParams`), `/salons/[id]`
+    (SSR salon profile with `generateMetadata`, per the PRD's SEO NFR),
+    `/salons/[id]/book` (client-side booking flow: service → date → slot →
+    payment method → confirm, shows the completion OTP on success),
+    `/login` (phone-OTP flow), `/owner` (create-salon form when the owner
+    has none yet, else today's dashboard).
+  - Verified via `npm run build` and `npm run lint` — lint caught 3
+    legitimate `react-hooks/set-state-in-effect` flags (new, strict
+    React-Compiler-era rule) from syncing client state off `localStorage`
+    post-mount to avoid SSR hydration mismatches; resolved with targeted,
+    commented disables rather than restructuring, since the pattern is
+    correct. Also fixed a `window.location.href` navigation warning by
+    switching to `useRouter().push()`.
+- **Docs**: root `README.md` (setup/run instructions, stubbed-vs-real
+  summary), this file, and `CLAUDE.md`.
+
+### Verified
+
+- `backend`: `npm run build`, `npm run lint`, `npx tsc --noEmit`, and a
+  real process boot (DI graph + route mapping confirmed correct; fails
+  only on Postgres/Redis connection, which is expected with nothing
+  running).
+- `frontend`: `npm run build`, `npm run lint` — both clean.
+- `database`: `npx prisma validate`, `npx prisma generate` — schema is
+  valid and the client generates correctly.
+- **Not verified**: no live Postgres/Redis in this environment (no Docker
+  available), so no actual end-to-end request has been made against a
+  running database. Migration has never been run. This is the first thing
+  to do wherever Docker is available.
+
+### Explicitly out of scope this session (see `CLAUDE.md` "Known gaps")
+
+Real Razorpay orders, SMS/WhatsApp delivery, BullMQ job queue, rate
+limiting middleware, Google/email auth, home-service booking flow,
+loyalty/referral/wallet — all either V2/V3 per the PRD or genuinely need
+external credentials/infra this session didn't have.
+
+### Next steps (not started)
+
+- Get Docker running somewhere and do the first real end-to-end pass:
+  migrate → seed → run both dev servers → click through the golden path
+  (search → salon profile → book → OTP complete) in a browser.
+- `git add` + first commit (not yet done — awaiting user confirmation).
