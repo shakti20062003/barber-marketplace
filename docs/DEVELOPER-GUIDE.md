@@ -446,8 +446,15 @@ suits their face.
   screenshot it when a scan fails. Tested: normal,
   phone-style sideways+flag, sideways without flag and tight close-up are all
   detected; a back-of-head photo is rejected.
-- **It's an estimate.** The prototype proportions in `faceShape.ts` are
-  hand-calibrated; the UI says it's a styling guide, not a guarantee.
+- **No percentages are shown (founder decision 2026-11-21).** The score is
+  only a face-shape lookup, too rough for a precise number, and an exact %
+  looked authoritative when it wasn't, which is a trust risk. The UI shows
+  bands only: **Great match** (score ≥ 88), **Good match** (≥ 78), **May not
+  suit you**, each with a one-line reason, plus "the best style is the one you
+  love". The face-shape line says "looks closest to …" without a confidence
+  %. Paid AI (stylist analysis or virtual try-on) was discussed and
+  **deferred: no paid AI for now.** The prototype proportions in
+  `faceShape.ts` are hand-calibrated.
   Verified end to end on a sample portrait (Oval, 54%, matches 76–91%). If
   results look skewed on real users, tune `PROTOTYPES` / `SPREAD`.
 
@@ -461,7 +468,7 @@ suits their face.
 | `/search` | everyone | Full search |
 | `/salons/[id]` | everyone | Salon profile (server-rendered for SEO): open status, services with photos, stylists, hours, map + directions, reviews |
 | `/salons/[id]/book` | customer | Service → date chips (closed days marked) → colour-coded times → confirm. Confirmation shows the code and the "reach on time" notice |
-| `/styles` | everyone | **Style Finder**: selfie/upload → face shape → "Compare with my face" per cut (match %), "Compare all", best matches first, Women's/Men's toggle |
+| `/styles` | everyone | **Style Finder**: selfie/upload → face shape → "Does it suit me?" per cut (Great / Good / May not suit, never a %), "Check all", best matches first, Women's/Men's toggle |
 | `/compare?a=&b=` | everyone | Side-by-side comparison; ✓ marks the better value; same-name services priced side by side |
 | `/login` | everyone | Phone + OTP; redirects by role (or to `?next=`) |
 | `/account` | customer | Profile + photo, Upcoming / Past bookings. Tap a booking for details: code, add services, call salon, directions, cancel, review |

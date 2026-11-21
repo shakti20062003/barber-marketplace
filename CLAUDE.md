@@ -343,7 +343,10 @@ actually resolves through the workspace symlink.
   device. Seeded catalogue: 28 styles with per-face-shape scores, upserted
   and never overwritten. Starter photos are free Unsplash images
   (`STYLE_PHOTOS` in the seed, only fills styles with no photo); admins
-  replace them in Admin → Style Finder catalogue.
+  replace them in Admin → Style Finder catalogue. **Never show match
+  percentages** (founder decision): bands only (Great ≥ 88 / Good ≥ 78 /
+  May not suit), and say the final choice is the customer's. No paid AI
+  for this feature for now.
 - **Achievements** (`modules/businesses/achievements.ts`): computed per
   request from reviews and completed visits, never stored. Earned ones go on
   search cards and the salon page; the full list with progress is on the owner

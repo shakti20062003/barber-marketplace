@@ -570,3 +570,17 @@ service may run past closing.
   A failed scan now clears the previous result.
 - Next step: get a screenshot of the diagnostics panel from the founder's
   phone to pinpoint the cause.
+
+## 2026-11-21 — Style Finder: drop match percentages
+
+- Founder feedback: the face↔style comparison isn't accurate enough, and
+  showing exact percentages is risky. Discussed AI options (vision-model
+  stylist about ₹1–3/scan; image-generation try-on about ₹3–10/image);
+  founder chose **no paid AI for now**.
+- Changed: no % anywhere. Bands only: Great match / Good match / May not
+  suit you, each with a reason. Face shape shown as "looks closest to …" (no
+  "% sure"). Added "the best style is the one you love; your stylist can help".
+  Buttons: "Does it suit me?" / "Check all". Thresholds tightened to 88/78,
+  because at 85/75 an oval face got 13 of 14 "Great". Verified in the
+  browser: men 5 Great / 8 Good / 1 May not suit; women 7 / 7; zero "%" on
+  the page.

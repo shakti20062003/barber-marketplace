@@ -17,10 +17,16 @@ import type { HairStyle } from '@/lib/types';
 
 type Gender = 'MEN' | 'WOMEN';
 
-function matchColour(pct: number) {
-  if (pct >= 85) return { bar: 'bg-emerald-500', text: 'text-emerald-700', label: 'Great match' };
-  if (pct >= 75) return { bar: 'bg-amber-500', text: 'text-amber-700', label: 'Good match' };
-  return { bar: 'bg-neutral-400', text: 'text-muted', label: 'Not the best fit' };
+/**
+ * Broad bands only — never a percentage. The underlying score comes from
+ * face-shape styling guidance, which is too rough to justify a precise
+ * number (founder decision 2026-11-21: exact % looked authoritative but
+ * wasn't, which is a trust risk). Score is used only for bands + sorting.
+ */
+function matchBand(score: number) {
+  if (score >= 88) return { badge: 'bg-emerald-600', text: 'text-emerald-700', bg: 'bg-emerald-50', label: 'Great match', icon: '✨' };
+  if (score >= 78) return { badge: 'bg-amber-500', text: 'text-amber-800', bg: 'bg-amber-50', label: 'Good match', icon: '👍' };
+  return { badge: 'bg-neutral-500', text: 'text-muted', bg: 'bg-neutral-100', label: 'May not suit you', icon: '🤔' };
 }
 
 /** Illustrated placeholder until an admin uploads a real photo for the style. */
@@ -48,8 +54,7 @@ function StyleCard({
   revealed: boolean;
   onCompare: () => void;
 }) {
-  const pct = analysis ? matchPercent(style.faceShapeFit, analysis) : null;
-  const colour = pct != null ? matchColour(pct) : null;
+  const band = analysis ? matchBand(matchPercent(style.faceShapeFit, analysis)) : null;
 
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-surface">
@@ -60,9 +65,9 @@ function StyleCard({
         ) : (
           <StylePlaceholder style={style} />
         )}
-        {revealed && pct != null && (
-          <span className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-xs font-bold text-white">
-            {pct}%
+        {revealed && band && (
+          <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${band.badge}`}>
+            {band.label}
           </span>
         )}
       </div>
@@ -73,23 +78,19 @@ function StyleCard({
         </p>
         <p className="mt-1 line-clamp-2 text-xs text-foreground/70">{style.description}</p>
 
-        {revealed && pct != null && analysis ? (
-          <div className="mt-2">
-            <div className="flex items-baseline justify-between">
-              <span className={`text-xs font-semibold ${colour!.text}`}>{colour!.label}</span>
-              <span className={`text-lg font-bold ${colour!.text}`}>{pct}%</span>
-            </div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-100">
-              <div className={`h-full rounded-full ${colour!.bar}`} style={{ width: `${pct}%` }} />
-            </div>
-            <p className="mt-1 text-[11px] text-muted">{matchReason(style.faceShapeFit, analysis)}</p>
+        {revealed && band && analysis ? (
+          <div className={`mt-2 rounded-lg p-2 ${band.bg}`}>
+            <p className={`text-sm font-bold ${band.text}`}>
+              {band.icon} {band.label}
+            </p>
+            <p className="mt-0.5 text-[11px] text-foreground/70">{matchReason(style.faceShapeFit, analysis)}</p>
           </div>
         ) : (
           <button
             onClick={onCompare}
             className="mt-auto rounded-lg bg-brand-tint py-1.5 text-xs font-semibold text-brand-dark active:scale-[0.98]"
           >
-            Compare with my face
+            Does it suit me?
           </button>
         )}
       </div>
@@ -187,11 +188,8 @@ export default function StyleFinderPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={photoUrl} alt="Your photo" className="h-24 w-20 shrink-0 rounded-xl object-cover" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted">Your face shape</p>
-              <p className="text-xl font-bold">
-                {shapeInfo!.label}{' '}
-                <span className="text-sm font-medium text-muted">· {Math.round(analysis.confidence * 100)}% sure</span>
-              </p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Your face shape looks closest to</p>
+              <p className="text-xl font-bold">{shapeInfo!.label}</p>
               <p className="mt-1 text-sm text-foreground/80">{shapeInfo!.tip}</p>
               <button onClick={() => cameraRef.current?.click()} className="mt-2 text-xs font-semibold text-accent underline">
                 Retake photo
@@ -266,7 +264,7 @@ export default function StyleFinderPage() {
             onClick={() => setRevealed(new Set(visible.map((s) => s.id)))}
             className="shrink-0 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-semibold"
           >
-            Compare all
+            Check all
           </button>
         )}
       </div>
@@ -280,6 +278,13 @@ export default function StyleFinderPage() {
           />
           Best matches first
         </label>
+      )}
+
+      {analysis && (
+        <p className="mt-3 rounded-xl bg-accent-tint/60 p-3 text-sm text-foreground/80">
+          💡 We recommend styles that usually suit your face shape — but the best style is the one <b>you</b> love. Your
+          stylist can help you decide.
+        </p>
       )}
 
       {/* Catalogue */}
@@ -303,8 +308,8 @@ export default function StyleFinderPage() {
       </div>
 
       <p className="mt-4 text-[11px] text-muted">
-        Match scores are a styling guide based on your face shape, not a guarantee — hair type, texture and your stylist&apos;s
-        advice matter too.
+        Suggestions are based only on your face shape. Hair type, texture and your own taste matter just as much — so
+        treat these as ideas, not rules.
       </p>
     </div>
   );
