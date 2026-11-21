@@ -129,7 +129,7 @@ function ComparePageInner() {
   );
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 pb-24">
+    <div className="mx-auto w-full max-w-3xl px-4 py-6 pb-24">
       <Link href="/" className="text-sm text-muted underline">
         ← Back
       </Link>

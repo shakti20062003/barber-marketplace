@@ -69,7 +69,7 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
         )}
       </div>
 
-      <div className="mx-auto max-w-5xl px-4">
+      <div className="mx-auto w-full max-w-5xl px-4">
         <div className="mt-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-bold sm:text-2xl">{business.name}</h1>

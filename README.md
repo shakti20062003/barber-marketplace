@@ -1,5 +1,8 @@
 # Trimly admin - 800000099
 
+> **New to this codebase?** Read [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md) first: architecture, business rules, API reference, deploy and how-tos.
+
+
 Marketplace for barbers, salons, beauty parlours & grooming services. Full product spec: [`docs/Trimly-PRD-SRS-v1 updated.md`](docs/Trimly-PRD-SRS-v1%20updated.md).
 
 Web-first MVP per the PRD's own guidance (native/mobile is V2). Monorepo layout:

@@ -100,7 +100,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="mx-auto max-w-sm px-4 py-10">
+    <div className="mx-auto w-full max-w-sm px-4 py-10">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-xl font-extrabold text-brand-foreground">
         T
       </div>

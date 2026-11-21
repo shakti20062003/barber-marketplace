@@ -435,3 +435,20 @@ service may run past closing.
   new unit tests (15 total), plus a live API run on Style Studio. Default
   last start 6:15 PM for a 45-min service; 30-min setting gives 6:30 PM;
   999 rejected; null restores the default.
+
+## 2026-11-21 — "Booking page opens zoomed in" + developer guide
+
+- Bug: on phones the booking page laid out 448px wide on a ~374px screen,
+  so mobile browsers shrank it or let it pan, which looked "zoomed".
+  Cause: page container `mx-auto max-w-md` inside the flex-column `<main>`
+  sized to its widest content (the date-chip row). Fix: `w-full` on every
+  page container (book, owner, manage, compare, login, admin, salon).
+  Verified by rendering the pages in a 390px iframe on the production
+  build: scrollWidth equals clientWidth on the booking pages (previously
+  448 vs 374); home, salon, compare, search, login also OK.
+- Added `docs/DEVELOPER-GUIDE.md`: a full handover document for any
+  developer or AI (what the app is, stack, repo map, local run, Render
+  deploy + env vars, architecture + conventions, scheduling/booking rules,
+  page map, API reference, data model, known gaps, how-tos, change
+  history). Linked from CLAUDE.md and README.md; the maintenance policy now
+  includes keeping it current.

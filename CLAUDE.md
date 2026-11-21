@@ -8,6 +8,11 @@ conventions change — see "Maintenance policy" at the bottom.
 For a chronological log of what's been built and when, see `PROGRESS.md`
 (update that one too, per the same policy).
 
+For the full human-readable picture (architecture, business rules, API
+reference, data model, deploy, how-tos) see **`docs/DEVELOPER-GUIDE.md`**.
+Keep it current too: when a convention, rule, endpoint or gap changes,
+update the matching section there as well as here.
+
 ## What this is
 
 Trimly is a two-sided marketplace for booking barbers, salons, beauty
@@ -299,6 +304,12 @@ actually resolves through the workspace symlink.
     `:root` variable was flipping underneath them. If dark mode support
     is ever wanted, it needs real `dark:` utility variants added to every
     component, not a variable swap behind their backs.
+- **Page containers must be `mx-auto w-full max-w-… px-4`.** `<main>` is a
+  vertical flexbox; without `w-full` a centred container sizes to its widest
+  content (the booking page's scrollable date-chip row) and makes the page
+  wider than the phone, which looked like the page "opening zoomed in"
+  (fixed 2026-11-21). To test, render a page in a 390px iframe and compare
+  `document.documentElement.scrollWidth` to `clientWidth`.
 - Images are plain `<img>` tags (with the `@next/next/no-img-element`
   lint rule disabled inline), not `next/image` — consistent with the
   existing `BusinessCard`/salon-profile code, and avoids needing a
@@ -416,7 +427,9 @@ not a one-off:
    actually got done (append, don't rewrite history), and update this file
    (`CLAUDE.md`) if anything here changed — new stack decisions, new
    conventions, new gaps closed, new gotchas discovered.
-3. Keep this file a *context briefing*, not a diary — architecture,
+3. Keep `docs/DEVELOPER-GUIDE.md` in sync with any change to architecture,
+   rules, endpoints, env vars or known gaps.
+4. Keep this file a *context briefing*, not a diary — architecture,
    conventions, versions, gotchas, current state. Keep `PROGRESS.md` as the
    *diary* — dated entries of what happened. Don't duplicate the PRD's
    content into this file; reference it instead.

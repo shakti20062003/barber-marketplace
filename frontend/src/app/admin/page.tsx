@@ -294,7 +294,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-5xl px-4 py-6">
+      <div className="mx-auto w-full max-w-5xl px-4 py-6">
         <p className="text-xs text-slate-500">Signed in as {user.name} · tap a box to see its list</p>
 
         <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">

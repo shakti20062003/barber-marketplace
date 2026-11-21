@@ -247,7 +247,7 @@ export default function OwnerPage() {
 
   if (businesses.length === 0) {
     return (
-      <div className="mx-auto max-w-md px-4 py-8">
+      <div className="mx-auto w-full max-w-md px-4 py-8">
         <h1 className="text-xl font-bold">Set up your salon</h1>
         <p className="mt-1 text-sm text-muted">
           You&apos;ll appear in search once an admin verifies your listing (§4.4).
@@ -313,7 +313,7 @@ export default function OwnerPage() {
 
   const business = businesses[0];
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6">
+    <div className="mx-auto w-full max-w-3xl px-4 py-6">
       <div className="flex items-center justify-between text-sm text-muted">
         <div className="flex items-center gap-3">
           <AvatarPicker name={user.name} avatarUrl={avatarUrl} onChange={setAvatarUrl} size={48} />

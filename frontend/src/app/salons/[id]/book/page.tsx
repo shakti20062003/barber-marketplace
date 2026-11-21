@@ -152,7 +152,7 @@ export default function BookPage() {
 
   if (confirmation) {
     return (
-      <div className="mx-auto max-w-md px-4 py-10 text-center">
+      <div className="mx-auto w-full max-w-md px-4 py-10 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent-tint text-2xl">✓</div>
         <h1 className="mt-4 text-xl font-bold">Booking confirmed</h1>
         <p className="mt-1 text-sm text-muted">
@@ -196,7 +196,7 @@ export default function BookPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-6 pb-28">
+    <div className="mx-auto w-full max-w-md px-4 py-6 pb-28">
       <h1 className="text-xl font-bold">Book {business?.name ?? '…'}</h1>
       {business && (
         <p className={`mt-0.5 text-sm ${business.openNow ? 'text-emerald-700' : 'text-muted'}`}>

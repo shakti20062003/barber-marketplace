@@ -421,7 +421,7 @@ export default function OwnerManagePage() {
   const status = STATUS_COPY[business.verificationStatus];
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6 pb-24">
+    <div className="mx-auto w-full max-w-2xl px-4 py-6 pb-24">
       <div className="flex items-center justify-between text-sm text-muted">
         <Link href="/owner" className="font-medium underline hover:text-foreground">
           ← Back to dashboard
