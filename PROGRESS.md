@@ -452,3 +452,11 @@ service may run past closing.
   page map, API reference, data model, known gaps, how-tos, change
   history). Linked from CLAUDE.md and README.md; the maintenance policy now
   includes keeping it current.
+
+## 2026-11-21 — Owner Manage: buttons sharing one "busy" state
+
+- Bug: on /owner/manage, tapping "Save location" made the "Upload photos"
+  button show "Uploading…". Every action shared one `busy` boolean.
+  Fix: `busy` is now the specific in-flight action (`'photos' | 'location' |
+  'cutoff' | 'service' | 'servicePhoto' | 'staff' | 'photoLink'`), and each
+  button checks only its own; "Save location" now shows "Saving…".

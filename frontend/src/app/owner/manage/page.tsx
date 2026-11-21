@@ -195,7 +195,10 @@ export default function OwnerManagePage() {
   const [staffForm, setStaffForm] = useState({ name: '', experienceYears: '' });
   const [photoUrl, setPhotoUrl] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
-  const [busy, setBusy] = useState(false);
+  // Which action is in flight, so each button shows its own progress
+  // (one shared boolean made "Save location" show "Uploading…" on the photo button).
+  type BusyAction = 'photos' | 'photoLink' | 'location' | 'cutoff' | 'service' | 'servicePhoto' | 'staff';
+  const [busy, setBusy] = useState<BusyAction | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [location, setLocation] = useState<{ lat: string; lng: string; address: string }>({ lat: '', lng: '', address: '' });
   const [mapsLink, setMapsLink] = useState('');
@@ -233,7 +236,7 @@ export default function OwnerManagePage() {
 
   async function addService() {
     if (!token || !business || !serviceForm.name || !serviceForm.price) return;
-    setBusy(true);
+    setBusy('service');
     setError(null);
     try {
       await apiFetch(`/owner/businesses/${business.id}/services`, {
@@ -250,13 +253,13 @@ export default function OwnerManagePage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add service');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function addStaff() {
     if (!token || !business || !staffForm.name) return;
-    setBusy(true);
+    setBusy('staff');
     setError(null);
     try {
       await apiFetch(`/owner/businesses/${business.id}/staff`, {
@@ -272,13 +275,13 @@ export default function OwnerManagePage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add staff member');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function addPhoto() {
     if (!token || !business || !photoUrl.trim()) return;
-    setBusy(true);
+    setBusy('photoLink');
     setError(null);
     try {
       await apiFetch(`/owner/businesses/${business.id}/media`, {
@@ -291,13 +294,13 @@ export default function OwnerManagePage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add photo');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function uploadPhotos(files: FileList | null) {
     if (!token || !business || !files || files.length === 0) return;
-    setBusy(true);
+    setBusy('photos');
     setError(null);
     try {
       for (const file of Array.from(files).slice(0, 10)) {
@@ -312,13 +315,13 @@ export default function OwnerManagePage() {
     } catch (err) {
       setError(err instanceof ApiError || err instanceof Error ? err.message : 'Could not upload photo');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function setServicePhoto(serviceId: string, imageUrl: string | null) {
     if (!token || !business) return;
-    setBusy(true);
+    setBusy('servicePhoto');
     setError(null);
     try {
       await apiFetch(`/owner/businesses/${business.id}/services/${serviceId}`, {
@@ -330,7 +333,7 @@ export default function OwnerManagePage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not update service photo');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -369,7 +372,7 @@ export default function OwnerManagePage() {
       setLocationMsg('Set a location first.');
       return;
     }
-    setBusy(true);
+    setBusy('location');
     try {
       await apiFetch(`/owner/businesses/${business.id}`, {
         method: 'PATCH',
@@ -381,13 +384,13 @@ export default function OwnerManagePage() {
     } catch (err) {
       setLocationMsg(err instanceof ApiError ? err.message : 'Could not save location');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function saveCutoff(lastBookingCutoffMinutes: number | null) {
     if (!token || !business) return;
-    setBusy(true);
+    setBusy('cutoff');
     setError(null);
     try {
       await apiFetch(`/owner/businesses/${business.id}`, {
@@ -399,18 +402,18 @@ export default function OwnerManagePage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save setting');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function removePhoto(mediaId: string) {
     if (!token || !business) return;
-    setBusy(true);
+    setBusy('photos');
     try {
       await apiFetch(`/owner/businesses/${business.id}/media/${mediaId}`, { method: 'DELETE', token });
       reload(business.id, token);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -444,7 +447,7 @@ export default function OwnerManagePage() {
               <img src={m.url} alt="" className="h-full w-full object-cover" />
               <button
                 onClick={() => removePhoto(m.id)}
-                disabled={busy}
+                disabled={busy === 'photos'}
                 className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white"
                 aria-label="Remove photo"
               >
@@ -456,10 +459,10 @@ export default function OwnerManagePage() {
         </div>
         <button
           onClick={() => photoInputRef.current?.click()}
-          disabled={busy}
+          disabled={busy === 'photos'}
           className="w-full rounded-xl bg-brand py-3 text-sm font-semibold text-brand-foreground disabled:opacity-50"
         >
-          {busy ? 'Uploading…' : '📷 Upload photos from your phone'}
+          {busy === 'photos' ? 'Uploading…' : '📷 Upload photos from your phone'}
         </button>
         <input
           ref={photoInputRef}
@@ -482,7 +485,7 @@ export default function OwnerManagePage() {
             />
             <button
               onClick={addPhoto}
-              disabled={busy || !photoUrl.trim()}
+              disabled={busy === 'photoLink' || !photoUrl.trim()}
               className="shrink-0 rounded-xl border border-border px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
             >
               Add
@@ -537,19 +540,19 @@ export default function OwnerManagePage() {
         {locationMsg && <p className="text-sm text-muted">{locationMsg}</p>}
         <button
           onClick={saveLocation}
-          disabled={busy}
+          disabled={busy === 'location'}
           className="w-full rounded-xl bg-brand py-2.5 text-sm font-semibold text-brand-foreground disabled:opacity-50"
         >
-          Save location
+          {busy === 'location' ? 'Saving…' : 'Save location'}
         </button>
       </Section>
 
-      <BookingHoursSection key={String(business.lastBookingCutoffMinutes)} business={business} busy={busy} onSave={saveCutoff} />
+      <BookingHoursSection key={String(business.lastBookingCutoffMinutes)} business={business} busy={busy === 'cutoff'} onSave={saveCutoff} />
 
       <Section title={`Services (${business.services.length})`}>
         <div className="divide-y divide-border rounded-xl border border-border bg-surface">
           {business.services.map((s) => (
-            <ServiceRow key={s.id} service={s} busy={busy} onPhoto={(url) => setServicePhoto(s.id, url)} />
+            <ServiceRow key={s.id} service={s} busy={busy === 'servicePhoto'} onPhoto={(url) => setServicePhoto(s.id, url)} />
           ))}
           {business.services.length === 0 && <p className="p-3 text-sm text-muted">No services yet.</p>}
         </div>
@@ -577,7 +580,7 @@ export default function OwnerManagePage() {
         </div>
         <button
           onClick={addService}
-          disabled={busy || !serviceForm.name || !serviceForm.price}
+          disabled={busy === 'service' || !serviceForm.name || !serviceForm.price}
           className="w-full rounded-xl bg-brand-tint py-2.5 text-sm font-semibold text-brand-dark disabled:opacity-50"
         >
           Add service
@@ -611,7 +614,7 @@ export default function OwnerManagePage() {
         </div>
         <button
           onClick={addStaff}
-          disabled={busy || !staffForm.name}
+          disabled={busy === 'staff' || !staffForm.name}
           className="w-full rounded-xl bg-brand-tint py-2.5 text-sm font-semibold text-brand-dark disabled:opacity-50"
         >
           Add staff member
