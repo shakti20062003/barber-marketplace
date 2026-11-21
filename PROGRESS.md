@@ -675,3 +675,17 @@ Founder confirmed Google login and in-app calls work on real phones.
   in a clean dir from the existing one, 51-line diff, Linux binaries intact).
 - Regression: push e2e (15), login+calls e2e (22), original e2e (22) and
   31 unit tests all pass.
+
+## 2026-11-21 — Photo flash on tab switches (second fix)
+
+- Founder: photos still reloaded on every tab switch. The first fix only
+  covered Home (server page). Cause: Styles, Account and the owner dashboard
+  fetch their data in the browser on every visit, so they started blank
+  ("Loading…") and photos popped in again.
+- Fix: `lib/clientCache.ts` (`useCachedState`, in-memory, per account, wiped on
+  sign-out) for those pages and the account cards; `SmoothImage` (cached photos
+  visible before first paint, others fade in) + smaller Unsplash card sizes.
+- Verified with a timing-free check (timers are throttled in the automation
+  window, so ms timings were unreliable): on return visits Styles (28
+  photos), Account and Home drew 0 photos invisible and never showed
+  "Loading…".

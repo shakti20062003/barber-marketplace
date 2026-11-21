@@ -323,10 +323,17 @@ actually resolves through the workspace symlink.
   wider than the phone, which looked like the page "opening zoomed in"
   (fixed 2026-11-21). To test, render a page in a 390px iframe and compare
   `document.documentElement.scrollWidth` to `clientWidth`.
-- `next.config.ts` sets `experimental.staleTimes.dynamic = 60` so
-  switching tabs doesn't refetch and re-render dynamic pages (it caused photos
-  to flash). On `/account` both booking lists stay mounted and are toggled with
-  `hidden` for the same reason.
+- **No photo flash on tab switches** — three layers, keep all of them:
+  (1) `next.config.ts` `experimental.staleTimes.dynamic = 60` (server pages
+  like Home aren't refetched on quick back-and-forth); (2) client-fetched tab
+  pages (Styles, Account, owner dashboard, account cards) keep their data in
+  `useCachedState(cacheKey(...))` from `lib/clientCache.ts`, an in-memory cache
+  keyed per account and wiped by `clearSession()`, so returning renders
+  instantly and refreshes quietly; (3) card photos use `components/SmoothImage`
+  (shows cached photos before first paint, fades in uncached ones) and
+  `cardImageUrl()` (smaller Unsplash sizes). On `/account` both booking lists
+  stay mounted and are toggled with `hidden`. Verified: return visits draw
+  0 photos invisible and never show "Loading…".
 - Images are plain `<img>` tags (with the `@next/next/no-img-element`
   lint rule disabled inline), not `next/image` — consistent with the
   existing `BusinessCard`/salon-profile code, and avoids needing a

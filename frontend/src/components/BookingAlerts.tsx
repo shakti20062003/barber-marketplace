@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/auth-client';
 import { disablePush, enablePush, getPushState, sendTestPush, type PushState } from '@/lib/push';
+import { cacheKey, useCachedState } from '@/lib/clientCache';
 
 const COPY = {
   owner: {
@@ -20,7 +21,7 @@ const COPY = {
 /** Card that turns on push notifications for this phone (owners: booking alerts; customers: calls + updates). */
 export default function BookingAlerts({ audience = 'owner' }: { audience?: 'owner' | 'customer' }) {
   const copy = COPY[audience];
-  const [state, setState] = useState<PushState | 'loading'>('loading');
+  const [state, setState] = useCachedState<PushState | 'loading'>(cacheKey('alerts:state'), 'loading');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -30,7 +31,7 @@ export default function BookingAlerts({ audience = 'owner' }: { audience?: 'owne
     getPushState(token)
       .then(setState)
       .catch(() => setState('off'));
-  }, []);
+  }, [setState]);
 
   async function run(action: (token: string) => Promise<PushState>) {
     const token = getToken();

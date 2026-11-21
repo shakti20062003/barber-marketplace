@@ -5,6 +5,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { getStoredUser, getToken, saveSession } from '@/lib/auth-client';
 import type { AuthMethods, CurrentUser } from '@/lib/types';
 import GoogleButton from '@/components/GoogleButton';
+import { cacheKey, useCachedState } from '@/lib/clientCache';
 
 interface Me {
   phone: string | null;
@@ -20,8 +21,8 @@ interface Me {
  * one Trimly account — the API enforces it and we show its message.
  */
 export default function AccountLinks({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
-  const [me, setMe] = useState<Me | null>(null);
-  const [methods, setMethods] = useState<AuthMethods | null>(null);
+  const [me, setMe] = useCachedState<Me | null>(cacheKey('links:me'), null);
+  const [methods, setMethods] = useCachedState<AuthMethods | null>('links:methods', null);
   const [editingPhone, setEditingPhone] = useState(false);
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,7 +33,7 @@ export default function AccountLinks({ tone = 'light' }: { tone?: 'light' | 'dar
     if (!token) return;
     apiFetch<Me>('/users/me', { token }).then(setMe).catch(() => {});
     apiFetch<AuthMethods>('/auth/methods').then(setMethods).catch(() => {});
-  }, []);
+  }, [setMe, setMethods]);
 
   async function linkGoogle(credential: string) {
     const token = getToken();

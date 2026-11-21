@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { BusinessCard as BusinessCardType } from '@/lib/types';
 import { formatHhmm } from '@/lib/image';
+import SmoothImage from '@/components/SmoothImage';
 
 const BADGE_STYLE: Record<string, { label: string; className: string }> = {
   VERIFIED: { label: '✓ Verified', className: 'bg-accent-tint text-accent' },
@@ -22,8 +23,7 @@ export default function BusinessCard({ business }: { business: BusinessCardType 
     >
       <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-neutral-100 sm:h-28 sm:w-28">
         {business.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={business.image} alt={business.name} className="h-full w-full object-cover" />
+          <SmoothImage src={business.image} alt={business.name} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-muted">No photo</div>
         )}

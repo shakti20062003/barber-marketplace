@@ -10,6 +10,7 @@ import AvatarPicker from '@/components/AvatarPicker';
 import CallButton from '@/components/CallButton';
 import BookingAlerts from '@/components/BookingAlerts';
 import AccountLinks from '@/components/AccountLinks';
+import { cacheKey, useCachedState } from '@/lib/clientCache';
 import { formatTime } from '@/lib/image';
 
 interface OwnerBusiness {
@@ -243,14 +244,15 @@ const DEFAULT_WORKING_HOURS = {
 
 export default function OwnerPage() {
   const router = useRouter();
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const [businesses, setBusinesses] = useState<OwnerBusiness[] | null>(null);
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [user, setUser] = useCachedState<CurrentUser | null>(cacheKey('owner:user'), null);
+  // Cached across tab switches so returning here doesn't flash "Loading…".
+  const [businesses, setBusinesses] = useCachedState<OwnerBusiness[] | null>(cacheKey('owner:businesses'), null);
+  const [dashboard, setDashboard] = useCachedState<Dashboard | null>(cacheKey('owner:dashboard'), null);
   const [cities, setCities] = useState<City[]>([]);
   const [form, setForm] = useState({ name: '', category: 'Unisex', cityId: '', lat: '19.076', lng: '72.8777' });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useCachedState<string | null>(cacheKey('owner:avatar'), null);
 
   useEffect(() => {
     const stored = getStoredUser<CurrentUser>();
@@ -259,7 +261,6 @@ export default function OwnerPage() {
       router.push('/login');
       return;
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage read, unavailable during SSR
     setUser(stored);
     apiFetch<OwnerBusiness[]>('/owner/businesses', { token }).then(setBusinesses).catch(() => setBusinesses([]));
     apiFetch<City[]>('/cities').then(setCities).catch(() => setCities([]));

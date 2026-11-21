@@ -1,5 +1,7 @@
 'use client';
 
+import { clearClientCache } from './clientCache';
+
 const TOKEN_KEY = 'trimly_token';
 const USER_KEY = 'trimly_user';
 
@@ -22,4 +24,6 @@ export function getStoredUser<T>(): T | null {
 export function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  // Never show the previous account's cached data to the next one.
+  clearClientCache();
 }

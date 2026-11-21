@@ -14,6 +14,8 @@ import {
   type ScanDiagnostics,
 } from '@/lib/faceShape';
 import type { HairStyle } from '@/lib/types';
+import { useCachedState } from '@/lib/clientCache';
+import SmoothImage, { cardImageUrl } from '@/components/SmoothImage';
 
 type View = 'MEN' | 'WOMEN' | 'ALL';
 
@@ -74,8 +76,7 @@ function StyleCard({
     <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-surface">
       <div className="relative aspect-[4/5] bg-neutral-100">
         {style.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={style.imageUrl} alt={style.name} className="h-full w-full object-cover" />
+          <SmoothImage src={cardImageUrl(style.imageUrl)} alt={style.name} className="h-full w-full object-cover" />
         ) : (
           <StylePlaceholder style={style} />
         )}
@@ -126,7 +127,7 @@ export default function StyleFinderPage() {
       /* private mode — just don't remember */
     }
   }
-  const [styles, setStyles] = useState<HairStyle[] | null>(null);
+  const [styles, setStyles] = useCachedState<HairStyle[] | null>('styles:list', null);
   const [analysis, setAnalysis] = useState<FaceAnalysis | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -157,7 +158,7 @@ export default function StyleFinderPage() {
       .then(setStyles)
       .catch(() => setStyles([]));
     preloadFaceModel();
-  }, []);
+  }, [setStyles]);
 
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];

@@ -7,7 +7,9 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { clearSession, getStoredUser, getToken, saveSession } from '@/lib/auth-client';
 import type { BusinessDetail, CurrentUser, MyBooking, Service } from '@/lib/types';
 import AvatarPicker from '@/components/AvatarPicker';
+import { cacheKey, useCachedState } from '@/lib/clientCache';
 import RescheduleBooking from '@/components/RescheduleBooking';
+import SmoothImage from '@/components/SmoothImage';
 import BookingAlerts from '@/components/BookingAlerts';
 import AccountLinks from '@/components/AccountLinks';
 import CallButton from '@/components/CallButton';
@@ -227,8 +229,7 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
       <button onClick={() => setOpen((o) => !o)} className="flex w-full gap-3 p-3 text-left">
         <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
           {booking.business.image && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={booking.business.image} alt={booking.business.name} className="h-full w-full object-cover" />
+            <SmoothImage src={booking.business.image} alt={booking.business.name} className="h-full w-full object-cover" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -419,9 +420,10 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
 
 export default function AccountPage() {
   const router = useRouter();
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [bookings, setBookings] = useState<MyBooking[] | null>(null);
+  const [user, setUser] = useCachedState<CurrentUser | null>(cacheKey('account:user'), null);
+  // Cached across tab switches so returning here doesn't flash "Loading…".
+  const [profile, setProfile] = useCachedState<Profile | null>(cacheKey('account:profile'), null);
+  const [bookings, setBookings] = useCachedState<MyBooking[] | null>(cacheKey('account:bookings'), null);
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -449,7 +451,7 @@ export default function AccountPage() {
       router.push('/admin');
       return;
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage read, unavailable during SSR
+     
     setUser(stored);
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
