@@ -39,6 +39,26 @@ services:
       # Render suffixes service URLs when the name is taken (e.g. trimly-web-ab12).
       - key: WEB_APP_URL_PATTERN
         value: ^https://trimly-web(-[a-z0-9]+)?\.onrender\.com$
+      # Sign in with Google (free): OAuth "Web application" client id from
+      # Google Cloud Console. Set in the dashboard (not overwritten by syncs).
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      # Comma-separated Google emails allowed to sign in as admin.
+      - key: ADMIN_EMAILS
+        sync: false
+      # 'off' disables phone-OTP login. Do this once Google sign-in works:
+      # without SMS the code is shown on screen, so anyone could log in as
+      # any number (admin included).
+      - key: PHONE_LOGIN
+        sync: false
+      # Optional TURN relay for in-app calls on networks where direct
+      # WebRTC fails (free tiers exist, e.g. Metered).
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
       # Masked calling (Exotel). Fill these in the Render dashboard to enable
       # the call buttons; without them calls show "coming soon".
       - key: EXOTEL_SID

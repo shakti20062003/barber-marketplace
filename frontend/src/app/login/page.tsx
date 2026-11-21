@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { saveSession } from '@/lib/auth-client';
-import type { CurrentUser } from '@/lib/types';
+import type { AuthMethods, CurrentUser } from '@/lib/types';
+import GoogleButton from '@/components/GoogleButton';
 
 // Accepts how people actually type a number (spaces, dashes, no country
 // code) and normalizes it to the E.164 format the backend requires
@@ -30,6 +31,37 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [methods, setMethods] = useState<AuthMethods | null>(null);
+  const [showPhone, setShowPhone] = useState(false);
+
+  useEffect(() => {
+    apiFetch<AuthMethods>('/auth/methods')
+      .then(setMethods)
+      .catch(() => setMethods({ google: null, phone: true }));
+  }, []);
+
+  function finishLogin(result: { accessToken: string; user: CurrentUser }) {
+    saveSession(result.accessToken, result.user);
+    const roleHome = result.user.role === 'ADMIN' ? '/admin' : result.user.role === 'OWNER' ? '/owner' : '/account';
+    router.push(explicitNext ?? roleHome);
+  }
+
+  async function googleLogin(credential: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      finishLogin(
+        await apiFetch<{ accessToken: string; user: CurrentUser }>('/auth/google', {
+          method: 'POST',
+          body: JSON.stringify({ credential, role }),
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -88,10 +120,7 @@ function LoginForm() {
         method: 'POST',
         body: JSON.stringify({ phone, code, role, name: name || undefined }),
       });
-      saveSession(result.accessToken, result.user);
-      const roleHome =
-        result.user.role === 'ADMIN' ? '/admin' : result.user.role === 'OWNER' ? '/owner' : '/account';
-      router.push(explicitNext ?? roleHome);
+      finishLogin(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Incorrect OTP');
     } finally {
@@ -105,11 +134,52 @@ function LoginForm() {
         T
       </div>
       <h1 className="mt-4 text-center text-xl font-bold">Log in to Trimly</h1>
-      <p className="mt-1 text-center text-sm text-muted">
-        {step === 'phone' ? "We'll text you a one-time code." : 'Enter the code to continue.'}
-      </p>
+      <p className="mt-1 text-center text-sm text-muted">Book salons, manage your bookings and more.</p>
 
+      {/* Role only matters the first time an account is created (FR-1.2). */}
       {step === 'phone' && (
+        <div className="mt-6">
+          <label className="block text-sm font-semibold">I am a</label>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            {(['CUSTOMER', 'OWNER'] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => setRole(r)}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-medium ${
+                  role === r ? 'border-brand bg-brand-tint text-brand-dark' : 'border-border bg-surface'
+                }`}
+              >
+                {r === 'CUSTOMER' ? 'Customer' : 'Salon owner'}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-muted">Only used when creating a new account.</p>
+        </div>
+      )}
+
+      {methods === null && <p className="mt-6 text-center text-sm text-muted">Loading…</p>}
+
+      {methods?.google && step === 'phone' && (
+        <div className="mt-5">
+          <GoogleButton clientId={methods.google.clientId} onCredential={googleLogin} />
+          {loading && <p className="mt-2 text-center text-sm text-muted">Signing you in…</p>}
+          {error && !showPhone && <p className="mt-2 text-center text-sm text-red-600">{error}</p>}
+        </div>
+      )}
+
+      {methods && !methods.google && !methods.phone && (
+        <p className="mt-6 rounded-xl bg-amber-50 p-3 text-center text-sm text-amber-800">
+          Login is being set up. Please try again shortly.
+        </p>
+      )}
+
+      {methods?.phone && methods.google && step === 'phone' && !showPhone && (
+        <button onClick={() => setShowPhone(true)} className="mt-5 w-full text-center text-sm text-muted underline">
+          Use phone number instead (test mode)
+        </button>
+      )}
+
+      {methods?.phone && (showPhone || !methods.google) && step === 'phone' && (
         <div className="mt-5 space-y-4">
           <div>
             <label className="block text-sm font-semibold">Phone number</label>
@@ -119,27 +189,6 @@ function LoginForm() {
               placeholder="+919876543210"
               className="mt-1.5 w-full rounded-xl border border-border bg-surface px-3.5 py-2.5"
             />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold">I am a</label>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setRole('CUSTOMER')}
-                className={`rounded-xl border px-3 py-2.5 text-sm font-medium ${
-                  role === 'CUSTOMER' ? 'border-brand bg-brand-tint text-brand-dark' : 'border-border bg-surface'
-                }`}
-              >
-                Customer
-              </button>
-              <button
-                onClick={() => setRole('OWNER')}
-                className={`rounded-xl border px-3 py-2.5 text-sm font-medium ${
-                  role === 'OWNER' ? 'border-brand bg-brand-tint text-brand-dark' : 'border-border bg-surface'
-                }`}
-              >
-                Salon owner
-              </button>
-            </div>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button

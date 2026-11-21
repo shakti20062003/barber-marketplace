@@ -7,6 +7,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { clearSession, getStoredUser, getToken } from '@/lib/auth-client';
 import type { AdminStats, CurrentUser, PendingBusiness } from '@/lib/types';
 import AdminStyles from '@/components/AdminStyles';
+import AccountLinks from '@/components/AccountLinks';
 
 type View = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'CUSTOMERS' | 'OWNERS' | 'BOOKINGS' | 'STYLES';
 
@@ -299,6 +300,7 @@ export default function AdminPage() {
 
       <div className="mx-auto w-full max-w-5xl px-4 py-6">
         <p className="text-xs text-slate-500">Signed in as {user.name} · tap a box to see its list</p>
+        <AccountLinks tone="dark" />
 
         <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
           {TILES.map((t) => (

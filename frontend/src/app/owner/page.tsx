@@ -9,6 +9,7 @@ import type { Achievement, CurrentUser } from '@/lib/types';
 import AvatarPicker from '@/components/AvatarPicker';
 import CallButton from '@/components/CallButton';
 import BookingAlerts from '@/components/BookingAlerts';
+import AccountLinks from '@/components/AccountLinks';
 import { formatTime } from '@/lib/image';
 
 interface OwnerBusiness {
@@ -426,6 +427,7 @@ export default function OwnerPage() {
       </Link>
 
       <BookingAlerts />
+      <AccountLinks />
 
       <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
         <div className="rounded-xl border border-border bg-surface p-3 sm:p-4">

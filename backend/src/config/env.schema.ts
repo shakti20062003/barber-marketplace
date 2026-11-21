@@ -32,6 +32,19 @@ export const envSchema = z.object({
   EXOTEL_CALLER_ID: z.string().optional(),
   EXOTEL_SUBDOMAIN: z.string().optional(),
 
+  // Sign in with Google (free). OAuth "Web application" client id from Google Cloud.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  // 'off' disables phone-OTP login (do this in production until SMS exists:
+  // the OTP is shown on screen, so anyone could log in as any number).
+  PHONE_LOGIN: z.enum(['on', 'off']).optional(),
+  // Comma-separated Google emails that become/link the admin account.
+  ADMIN_EMAILS: z.string().optional(),
+
+  // Optional TURN relay for in-app calls on networks where direct WebRTC fails.
+  TURN_URLS: z.string().optional(),
+  TURN_USERNAME: z.string().optional(),
+  TURN_CREDENTIAL: z.string().optional(),
+
   // Web push contact (mailto: or https URL) sent to push services; keys are auto-generated.
   VAPID_SUBJECT: z.string().optional(),
 

@@ -133,6 +133,11 @@ model User {
   email        String?      @unique
   authProvider AuthProvider
   avatarUrl    String?
+  /// Google account id (`sub`) — one Google account can belong to one Trimly user.
+  googleSub    String?      @unique
+  /// True once the number was proven via OTP. Numbers added on the profile
+  /// (Google users, while SMS isn't live) are unverified but still unique.
+  phoneVerified Boolean     @default(false)
   createdAt    DateTime     @default(now())
 
   customerProfile CustomerProfile?

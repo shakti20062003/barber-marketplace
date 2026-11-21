@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
@@ -14,6 +16,8 @@ import type { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../common/redis/redis.module.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { SendOtpDto, VerifyOtpDto } from './dto/otp.dto.js';
+import { GoogleIdTokenVerifier, GoogleTokenError } from './google-id-token.js';
+import type { User } from 'database';
 
 const OTP_TTL_SECONDS = 5 * 60; // FR-1.1 AC: expires in 5 minutes
 const OTP_MAX_ATTEMPTS = 5; // FR-1.1 AC: max 5 attempts
@@ -32,6 +36,7 @@ function hashOtp(code: string): string {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly google = new GoogleIdTokenVerifier();
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
@@ -39,6 +44,150 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
   ) {}
+
+  // ---- Which login methods are on --------------------------------------
+
+  private googleClientId(): string | null {
+    return this.config.get<string>('GOOGLE_CLIENT_ID') || null;
+  }
+
+  /**
+   * Phone-OTP login. Until an SMS provider exists the code is shown on
+   * screen (devOtp) — fine for testing, but on a public site it lets anyone
+   * log in as any number. Set PHONE_LOGIN=off in production once Google
+   * sign-in is configured.
+   */
+  phoneLoginEnabled(): boolean {
+    return (this.config.get<string>('PHONE_LOGIN') ?? 'on').toLowerCase() !== 'off';
+  }
+
+  methods() {
+    const clientId = this.googleClientId();
+    return { google: clientId ? { clientId } : null, phone: this.phoneLoginEnabled() };
+  }
+
+  private adminEmails(): Set<string> {
+    return new Set(
+      (this.config.get<string>('ADMIN_EMAILS') ?? '')
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+
+  private async issue(user: User) {
+    const accessToken = await this.jwt.signAsync({ sub: user.id, role: user.role });
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        phone: user.phone,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+        googleLinked: !!user.googleSub,
+      },
+    };
+  }
+
+  private async verifyGoogle(credential: string) {
+    const clientId = this.googleClientId();
+    if (!clientId) throw new BadRequestException('Google sign-in is not set up yet.');
+    try {
+      return await this.google.verify(credential, clientId);
+    } catch (err) {
+      this.logger.warn(`Google token rejected: ${err instanceof Error ? err.message : err}`);
+      throw new UnauthorizedException(
+        err instanceof GoogleTokenError ? 'Google sign-in failed. Please try again.' : 'Could not verify Google sign-in.',
+      );
+    }
+  }
+
+  // ---- Google sign-in --------------------------------------------------
+
+  /**
+   * Sign in (or sign up) with a Google ID token. One Google account maps to
+   * exactly one Trimly user (`googleSub` is unique). An existing account
+   * with the same verified email is linked rather than duplicated. Role is
+   * only taken from the request when the account is first created (FR-1.2).
+   */
+  async googleLogin(credential: string, role: 'CUSTOMER' | 'OWNER') {
+    const id = await this.verifyGoogle(credential);
+
+    let user = await this.prisma.user.findUnique({ where: { googleSub: id.sub } });
+
+    if (!user) {
+      const byEmail = await this.prisma.user.findUnique({ where: { email: id.email } });
+      if (byEmail) {
+        if (byEmail.googleSub && byEmail.googleSub !== id.sub) {
+          throw new ConflictException('This email is already linked to a different Google account.');
+        }
+        user = await this.prisma.user.update({ where: { id: byEmail.id }, data: { googleSub: id.sub } });
+      }
+    }
+
+    if (!user && this.adminEmails().has(id.email)) {
+      // Allow-listed admin: attach to the existing (seeded) admin account if
+      // it isn't linked yet, otherwise create one.
+      const seededAdmin = await this.prisma.user.findFirst({
+        where: { role: 'ADMIN', googleSub: null },
+        orderBy: { createdAt: 'asc' },
+      });
+      user = seededAdmin
+        ? await this.prisma.user.update({
+            where: { id: seededAdmin.id },
+            data: { googleSub: id.sub, email: seededAdmin.email ?? id.email },
+          })
+        : await this.prisma.user.create({
+            data: { role: 'ADMIN', name: id.name ?? 'Admin', email: id.email, googleSub: id.sub, authProvider: 'GOOGLE' },
+          });
+    }
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          role,
+          name: id.name ?? 'New user',
+          email: id.email,
+          googleSub: id.sub,
+          avatarUrl: id.picture,
+          authProvider: 'GOOGLE',
+        },
+      });
+      if (user.role === 'CUSTOMER') {
+        await this.prisma.customerProfile.create({ data: { userId: user.id } });
+      }
+    }
+
+    return this.issue(user);
+  }
+
+  /**
+   * Attach a Google account to the signed-in user (e.g. an account created
+   * with phone OTP), so it keeps its data when phone login is switched off.
+   */
+  async linkGoogle(userId: string, credential: string) {
+    const id = await this.verifyGoogle(credential);
+    const me = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (me.googleSub === id.sub) return this.issue(me);
+    if (me.googleSub) throw new ConflictException('Your account is already linked to a different Google account.');
+
+    const owner = await this.prisma.user.findUnique({ where: { googleSub: id.sub } });
+    if (owner) throw new ConflictException('This Google account is already linked to another Trimly account.');
+    const emailOwner = await this.prisma.user.findUnique({ where: { email: id.email } });
+    if (emailOwner && emailOwner.id !== me.id) {
+      throw new ConflictException('This Google email is already used by another Trimly account.');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: me.id },
+      data: { googleSub: id.sub, email: me.email ?? id.email },
+    });
+    return this.issue(updated);
+  }
+
+  // ---- Phone OTP ---------------------------------------------------------
 
   private otpKey(phone: string) {
     return `otp:${phone}`;
@@ -49,6 +198,9 @@ export class AuthService {
   }
 
   async sendOtp({ phone }: SendOtpDto): Promise<{ sent: true; devOtp?: string }> {
+    if (!this.phoneLoginEnabled()) {
+      throw new ForbiddenException('Phone login is not available yet. Please continue with Google.');
+    }
     const sends = await this.redis.incr(this.rateLimitKey(phone));
     if (sends === 1) {
       await this.redis.expire(this.rateLimitKey(phone), OTP_RATE_LIMIT_WINDOW_SECONDS);
@@ -80,6 +232,9 @@ export class AuthService {
   }
 
   async verifyOtp({ phone, code, name, role }: VerifyOtpDto) {
+    if (!this.phoneLoginEnabled()) {
+      throw new ForbiddenException('Phone login is not available yet. Please continue with Google.');
+    }
     const raw = await this.redis.get(this.otpKey(phone));
     if (!raw) {
       throw new BadRequestException('OTP expired or was never requested. Request a new one.');
@@ -117,6 +272,7 @@ export class AuthService {
           name: name ?? 'New user',
           role,
           authProvider: 'PHONE_OTP',
+          phoneVerified: true,
         },
       });
       if (user.role === 'CUSTOMER') {
@@ -124,10 +280,6 @@ export class AuthService {
       }
     }
 
-    const accessToken = await this.jwt.signAsync({ sub: user.id, role: user.role });
-    return {
-      accessToken,
-      user: { id: user.id, name: user.name, role: user.role, phone: user.phone },
-    };
+    return this.issue(user);
   }
 }

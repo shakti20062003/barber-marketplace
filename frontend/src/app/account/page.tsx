@@ -8,6 +8,8 @@ import { clearSession, getStoredUser, getToken, saveSession } from '@/lib/auth-c
 import type { BusinessDetail, CurrentUser, MyBooking, Service } from '@/lib/types';
 import AvatarPicker from '@/components/AvatarPicker';
 import RescheduleBooking from '@/components/RescheduleBooking';
+import BookingAlerts from '@/components/BookingAlerts';
+import AccountLinks from '@/components/AccountLinks';
 import CallButton from '@/components/CallButton';
 import { directionsUrl, formatTime } from '@/lib/image';
 
@@ -576,6 +578,9 @@ export default function AccountPage() {
             </div>
           )}
         </div>
+
+        <BookingAlerts audience="customer" />
+        <AccountLinks />
 
         <div className="mt-8 border-t border-border pt-4">
           <button

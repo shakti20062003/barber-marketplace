@@ -157,6 +157,13 @@ export interface CurrentUser {
   role: 'CUSTOMER' | 'OWNER' | 'STAFF' | 'ADMIN';
   phone: string | null;
   avatarUrl?: string | null;
+  email?: string | null;
+  googleLinked?: boolean;
+}
+
+export interface AuthMethods {
+  google: { clientId: string } | null;
+  phone: boolean;
 }
 
 export type BookingStatus =

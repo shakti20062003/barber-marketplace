@@ -615,3 +615,38 @@ Later (discussion first): home-service bookings.
    booking to 3:00 PM via the UI). Fixed the period summary saying "Mostly
    busy" for a mostly-free morning.
 - Home service: deferred for discussion (founder's request).
+
+## 2026-11-21 — Free login + free calling (in progress)
+
+Founder can't pay for SMS or telephony yet. Agreed:
+1. **Sign in with Google** (free) as the main login. One Google account =
+   one Trimly account; one phone number = one account (phone added on the
+   profile). Security: the live site shows the OTP on screen (no SMS), so
+   anyone can log in as any number, admin included. Phone-OTP login gets
+   switched off on production once Google works; the admin signs in with
+   Google via an `ADMIN_EMAILS` allow-list.
+2. **In-app calling** (free): WebRTC voice calls between customer and
+   salon, rung through our push notifications; no phone numbers involved.
+
+### Done (free login + free calling, 2026-11-21)
+
+- Google sign-in: `google-id-token.ts` (RS256/JWKS, aud/iss/exp/email
+  checks; 8 unit tests; checked against Google's live keys), `POST
+  /auth/google`, `/auth/google/link`, `GET /auth/methods`, `PHONE_LOGIN`
+  kill switch, `ADMIN_EMAILS`. Migration `google_login` (`googleSub` unique,
+  `phoneVerified`; OTP accounts backfilled as verified). Login page
+  rebuilt (role → Google; phone only when enabled). `AccountLinks` card
+  (mobile number + Connect Google) on the account, owner and admin pages.
+- Uniqueness verified: a customer can't save the owner's number (409); same
+  number re-saved keeps verified; invalid numbers rejected; googleSub never
+  sent to the browser. With PHONE_LOGIN=off, send/verify return 403 and
+  methods report phone:false.
+- In-app calling: `modules/calls` + `/call/[id]` + CallButton now starts
+  WebRTC calls rung by push; customers can turn on notifications. A 22-check
+  API e2e passed; the real UI (incoming screen + Decline) worked. Media between
+  two peers can't be tested on this machine (two peers in one Windows browser
+  never connect, even with no server: mDNS/NAT loopback). Needs a
+  two-phone test.
+- Not done (founder must do): create the Google OAuth client id and set
+  `GOOGLE_CLIENT_ID` (+ `ADMIN_EMAILS`) on Render; link Google to existing
+  phone accounts; then set `PHONE_LOGIN=off`.

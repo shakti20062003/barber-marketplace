@@ -4,8 +4,22 @@ import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/auth-client';
 import { disablePush, enablePush, getPushState, sendTestPush, type PushState } from '@/lib/push';
 
-/** Owner dashboard card: turn on push notifications for new bookings. */
-export default function BookingAlerts() {
+const COPY = {
+  owner: {
+    offTitle: 'Get notified about new bookings',
+    offBody: 'Get a notification on this phone the moment a customer books, changes or cancels — and when they call you in the app. Works even when Trimly is closed.',
+    onBody: 'This phone gets a notification for every new booking, time change, cancellation, added service and in-app call.',
+  },
+  customer: {
+    offTitle: 'Turn on notifications',
+    offBody: 'So the salon can call you in the app (no phone numbers shared) and you hear about booking changes — even when Trimly is closed.',
+    onBody: 'This phone gets in-app calls from salons and updates about your bookings.',
+  },
+};
+
+/** Card that turns on push notifications for this phone (owners: booking alerts; customers: calls + updates). */
+export default function BookingAlerts({ audience = 'owner' }: { audience?: 'owner' | 'customer' }) {
+  const copy = COPY[audience];
   const [state, setState] = useState<PushState | 'loading'>('loading');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -60,17 +74,13 @@ export default function BookingAlerts() {
           {state === 'on' ? '🔔' : '🔕'}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">{state === 'on' ? 'Booking alerts are on' : 'Get notified about new bookings'}</p>
+          <p className="font-semibold">{state === 'on' ? 'Notifications are on' : copy.offTitle}</p>
 
           {state === 'on' && (
-            <p className="text-sm text-muted">
-              This phone gets a notification for every new booking, time change, cancellation and added service.
-            </p>
+            <p className="text-sm text-muted">{copy.onBody}</p>
           )}
           {state === 'off' && (
-            <p className="text-sm text-muted">
-              Get a notification on this phone the moment a customer books, changes or cancels — even when Trimly is closed.
-            </p>
+            <p className="text-sm text-muted">{copy.offBody}</p>
           )}
           {state === 'denied' && (
             <p className="text-sm text-muted">

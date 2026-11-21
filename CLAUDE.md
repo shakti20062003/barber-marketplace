@@ -115,8 +115,14 @@ actually resolves through the workspace symlink.
 
 ## Backend architecture conventions
 
-- **Auth**: phone OTP only (no Google/email flow built yet — PRD allows all
-  three, only OTP is implemented). OTP hashed (sha256) in Redis, 5 min TTL,
+- **Auth**: **Sign in with Google** is the main login (`POST /auth/google`,
+  ID token verified in `modules/auth/google-id-token.ts` with Node crypto;
+  needs `GOOGLE_CLIENT_ID`). Phone OTP is test-only: no SMS exists, so the
+  code is shown on screen. **`PHONE_LOGIN=off` must be set in production**
+  once Google works, or anyone can log in as any number. Uniqueness:
+  `users.googleSub`, `phone` and `email` are unique; `PATCH /users/me`
+  returns 409 on a taken number; `POST /auth/google/link` attaches Google to an
+  existing account. Admin via linking or `ADMIN_EMAILS`. OTP hashed (sha256) in Redis, 5 min TTL,
   max 5 verify attempts, 3 sends/10min rate limit — all in
   `backend/src/modules/auth/auth.service.ts`. Role is fixed at
   first-account-creation only, never mutable after (FR-1.2).
@@ -354,6 +360,10 @@ actually resolves through the workspace symlink.
   Use `push.notifyUser(userId, {title, body, url, tag})`, which is
   fire-and-forget. Owners enable it from the dashboard card; iPhone needs
   "Add to Home Screen". Service worker: `frontend/public/sw.js`.
+- **In-app calling** (`modules/calls`, `app/call/[id]`): WebRTC with
+  non-trickle offer/answer through Redis-backed endpoints; the callee is rung
+  by web push. STUN by default, TURN via env. Two peers on the Windows dev
+  machine can't connect (mDNS/NAT loopback), so test media on two real phones.
 - **Slots UI**: `components/SlotPicker.tsx` is shared by booking and
   reschedule (crowd levels Free/Busy/Crowded/Full from `available/total`).
 - **Achievements** (`modules/businesses/achievements.ts`): computed per

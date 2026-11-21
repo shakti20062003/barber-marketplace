@@ -46,7 +46,7 @@ item in the PRD.
 | Database | **PostgreSQL 16** via **Prisma 6.19.3** | Pinned to 6.x on purpose; 7+/8 change the config style. Don't bump casually. |
 | Cache / locks | **Redis 7** (ioredis) | OTP storage + rate limits, slot-hold locks. |
 | Validation | **Zod** on every request body/query | PRD requirement; not class-validator. |
-| Auth | Phone OTP → JWT | No password, Google or email login yet. |
+| Auth | **Sign in with Google** (main) + phone OTP (test mode, switchable off) → JWT | Google ID tokens verified with Node crypto (no SDK). No SMS provider yet. |
 | Hosting | **Render** (Blueprint in `render.yaml`) | Free tier: services sleep when idle (~1 min cold start). |
 | Package manager | npm workspaces (npm 10) | No pnpm/yarn. |
 
@@ -107,9 +107,10 @@ npm run dev:web     # http://localhost:3000
 
 ### Test accounts (seeded)
 
-Log in with any phone number. In development the OTP is returned in the API
-response (`devOtp`) and shown on the login screen, since no SMS provider is
-connected yet.
+**Google sign-in** needs `GOOGLE_CLIENT_ID` (see §5). Without it, the login
+screen shows phone login only: any phone number works, and the OTP is
+returned in the API response (`devOtp`) and shown on screen, because no SMS
+provider is connected.
 
 | Role | Phone | Notes |
 |---|---|---|
@@ -180,6 +181,10 @@ to start if a required one is missing.
 | `JWT_EXPIRES_IN` | | Default `7d` |
 | `PORT` | | Default `4000` |
 | `NODE_ENV` | | `development` returns `devOtp` (see above) |
+| `GOOGLE_CLIENT_ID` | for Google login | OAuth 2.0 **Web application** client id from Google Cloud Console (free). Add the web app's URL (and `http://localhost:3000`) under *Authorized JavaScript origins*. |
+| `PHONE_LOGIN` | | `off` disables phone-OTP login. **Set `off` in production once Google works**: without SMS the OTP is shown on screen, so anyone could log in as any number, admin included. Default `on`. |
+| `ADMIN_EMAILS` | | Comma-separated Google emails that sign in as (or link to) the admin account |
+| `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` | optional | TURN relay for in-app calls where direct WebRTC fails (free tiers exist) |
 | `TZ` | strongly recommended | `Asia/Kolkata` (main.ts defaults it if unset) |
 | `WEB_APP_URL` / `WEB_APP_URL_PATTERN` | | CORS origins (list / regex) |
 | `SEARCH_WEIGHT_DISTANCE` / `_RATING` / `_AVAILABILITY` | | Search ranking weights (PRD: must be configurable) |
@@ -380,6 +385,58 @@ with a local fake push service that decrypts what we send.
 - The owner dashboard also lists **Upcoming (next 7 days)**, and bookings
   made in the last 2 hours get a **NEW** badge (`isNew`).
 
+### 7.2c Login and account uniqueness — `modules/auth`
+
+- **Google sign-in (main):** the frontend `GoogleButton` (Google Identity
+  Services script) gets an ID token. `POST /auth/google {credential, role}`
+  verifies it in `google-id-token.ts`: RS256 signature against Google's JWKS
+  (cached per `max-age`), `aud` = our client id, `iss`, `exp`,
+  `email_verified`. Unit-tested; uses Node crypto only, no
+  google-auth-library. `role` is only used when the account is created.
+- **One Google account = one Trimly account:** `users.googleSub` is
+  unique. A Google sign-in whose verified email matches an existing account
+  links to it instead of creating a duplicate. `POST /auth/google/link`
+  (signed in) attaches Google to an existing account, refusing if that
+  Google account or email belongs to someone else.
+- **One phone number = one Trimly account:** `users.phone` is unique.
+  `PATCH /users/me {phone}` normalises Indian numbers to `+91XXXXXXXXXX`
+  and returns 409 "already registered with another Trimly account" if
+  taken (a race is caught as P2002). Numbers added on the profile are
+  `phoneVerified=false` (no SMS yet); OTP-created accounts are verified.
+- **Phone OTP** stays for local testing; `PHONE_LOGIN=off` makes both OTP
+  endpoints return 403 and hides it on the login screen (`GET /auth/methods`).
+- **Admins:** can't self-register. Either link Google to the seeded admin
+  (sign in by phone while it's still on → admin console → "Connect
+  Google"), or list the Google email in `ADMIN_EMAILS` (links to the seeded
+  admin, or creates one).
+- `AccountLinks` (account, owner and admin pages): mobile number +
+  Connect Google.
+
+### 7.2d In-app calling (free) — `modules/calls`, `app/call/[id]`
+
+WebRTC voice calls between a booking's customer and salon owner. No phone
+numbers are involved and no telephony provider is needed.
+1. `POST /calls {bookingId}` (either party, active booking) creates a call in
+   Redis (2 h TTL) and **rings the other side by web push** ("📞 Incoming
+   call from …" → `/call/:id`). It refuses with a clear message if the other
+   side has no push device registered.
+2. The caller posts an SDP **offer** (ICE gathered up front, non-trickle).
+   The callee taps Accept, posts the **answer**, and both poll `GET
+   /calls/:id`. Decline, hang-up, a 45 s no-answer timeout and
+   "missed call" notices are handled.
+3. Audio flows phone-to-phone, encrypted by WebRTC (DTLS-SRTP). ICE uses
+   Google STUN, plus optional TURN from env.
+- Customers turn on notifications on `/account` (`BookingAlerts
+  audience="customer"`) so salons can call them.
+- **Tested:** 22-check API run (ringing, offer/answer, decline, missed,
+  outsiders blocked, no phone numbers in payloads) and the real UI
+  (incoming screen, Decline). **Not verifiable on the dev machine:** actual
+  audio between two devices (two peers on one Windows machine can't
+  connect: mDNS/NAT loopback). Test with two phones on different networks.
+  If some carriers fail to connect, add a TURN relay (env above).
+- The Exotel `CallBridgeService` / `POST /bookings/:id/call` remains for a
+  possible paid phone-network option later; the UI uses in-app calls.
+
 ### 7.3 Search and ranking — `businesses.service.ts`
 
 A bounding-box pre-filter in SQL, then exact Haversine distance and weighted
@@ -510,7 +567,8 @@ suits their face.
 | `/salons/[id]/book` | customer | Service → date chips (closed days marked) → colour-coded times → confirm. Confirmation shows the code and the "reach on time" notice |
 | `/styles` | everyone | **Style Finder**: first visit asks "Men / Women / Both" (remembered on the device, `trimly_style_view`); tabs "Men's styles · Women's styles · All" (every style is open to everyone); selfie/upload → face shape → "Does it suit me?" per cut (Great / Good / May not suit, never a %), "Check all", best matches first |
 | `/compare?a=&b=` | everyone | Side-by-side comparison; ✓ marks the better value; same-name services priced side by side |
-| `/login` | everyone | Phone + OTP; redirects by role (or to `?next=`) |
+| `/login` | everyone | Customer/Salon owner choice → **Continue with Google**; phone OTP only while `PHONE_LOGIN` is on; redirects by role (or to `?next=`) |
+| `/call/[id]` | booking's customer / owner | In-app call screen: incoming (Accept/Decline), ringing, timer, mute, hang up |
 | `/account` | customer | Profile + photo, Upcoming / Past bookings. Tap a booking for details: code, add services, call salon, directions, cancel, review |
 | `/owner` | owner | First-time salon setup, or the dashboard: **booking alerts card**, today's bookings with Arrived / Complete (code) / No-show / Cancel / Call (refreshed every minute, NEW badges), **Upcoming (next 7 days)**, achievements |
 | `/owner/manage` | owner | Photos (upload from phone), location, **opening hours + breaks**, last booking time, services (+ photos), staff |
@@ -548,9 +606,13 @@ Frontend conventions:
 
 | Method & path | Who | Purpose |
 |---|---|---|
-| `POST /auth/otp/send` | 🔓 | Send OTP `{phone}` (3 per 10 min; returns `devOtp` in dev) |
+| `GET /auth/methods` | 🔓 | `{google: {clientId} \| null, phone: bool}`: what the login screen shows |
+| `POST /auth/google` | 🔓 | `{credential, role?}` → `{accessToken, user}` (Google ID token) |
+| `POST /auth/google/link` | any | Attach Google to the signed-in account |
+| `POST /auth/otp/send` | 🔓 | Send OTP `{phone}` (3 per 10 min; returns `devOtp` in dev; 403 when `PHONE_LOGIN=off`) |
 | `POST /auth/otp/verify` | 🔓 | `{phone, code, name?, role?}` → `{accessToken, user}` |
-| `GET /users/me` · `PATCH /users/me` | any | Profile; update `name`, `email`, `avatarUrl` (null removes it) |
+| `GET /users/me` · `PATCH /users/me` | any | Profile (+ `googleLinked`); update `name`, `email`, `avatarUrl`, `phone` (unique, 409 if taken) |
+| `POST /calls` · `GET /calls/:id` · `POST /calls/:id/{offer,answer,decline,end}` · `GET /calls/ice-servers` | customer / owner of the booking | In-app calling |
 | `GET /search/businesses` | 🔓 | `lat, lng, radiusKm, category, q, openNow, minRating, page, limit` |
 | `GET /businesses/:id` | 🔓 | Verified salon detail (+ `openNow`, `todayHours`) |
 | `GET /businesses/:id/availability` | 🔓 | `serviceId, date (YYYY-MM-DD), staffId?` → `{closed, hours, grid[], slots[]}` |
@@ -590,7 +652,7 @@ Frontend conventions:
 
 | Table | Key fields | Notes |
 |---|---|---|
-| `users` | `role` (CUSTOMER/OWNER/STAFF/ADMIN), `phone`, `avatarUrl` | Role fixed at first sign-up |
+| `users` | `role`, `phone` (unique), `phoneVerified`, `email` (unique), `googleSub` (unique), `avatarUrl` | Role fixed at first sign-up; one Google account / one phone per user |
 | `customer_profiles` | `reliabilityScore`, `noShowCountRolling`, `requiresPrepayment` | |
 | `businesses` | `workingHours` (JSON), `lat`, `lng`, `address`, `verificationStatus`, `lastBookingCutoffMinutes`, `cancellationPolicy` | Only `VERIFIED` is public |
 | `services` | `price`, `durationMinutes`, `imageUrl`, `active` | |
@@ -614,7 +676,8 @@ by `prisma migrate deploy` during the backend build.
 |---|---|---|
 | SMS OTP delivery | OTP returned in the API response (`devOtp`) | Integrate MSG91/Gupshup in `auth.service.ts`, then set `NODE_ENV=production` |
 | Online payment | Disabled end to end | Razorpay order creation in `bookings.service.ts`, then remove `assertPaymentMethodAvailable` and the disabled button |
-| Masked calling | Built; **never tested against live Exotel** | Exotel account + 4 env vars; test one real call |
+| Calling | Free in-app WebRTC calls live (signalling tested); real two-phone audio not yet tested | Test on two phones; add TURN if some networks fail. Exotel phone-network masking is still optional/paid |
+| SMS | None (phone OTP is test-only) | DLT-registered SMS provider (paid) when affordable; then `PHONE_LOGIN=on` with real SMS and `NODE_ENV=production` |
 | Notifications | Owner push alerts (book/change/cancel/add-on) live; customer gets "salon cancelled" | Customer reminders before visits, waitlist alerts, SMS fallback: needs a scheduler / job queue (BullMQ, PRD §7.2) |
 | Home-service bookings | Not started (founder wants to discuss first: privacy/safety, stylist-wise pricing, payments) | Schema fields exist (`serviceLocationType`, `HomeServiceArea`) |
 | Image storage | Inline data URLs in Postgres | Cloudinary/S3 |
@@ -659,6 +722,7 @@ Search for `TODO` in `backend/src` to see every stubbed call site.
 | 2026-11-21 | Owner setting "accept bookings until X min before closing" |
 | 2026-11-21 | Fixed booking page rendering wider than the phone screen ("opens zoomed in") |
 | 2026-11-21 | Hours list in Mon→Sun order (no overflow); owner hours editor with late closing + breaks; search radius picker; "Featured salons in your area" + achievements; **Style Finder** |
+| 2026-11-21 | **Sign in with Google** (+ phone-login kill switch, unique phone/Google per account, Connect Google); **free in-app calling** (WebRTC rung by push) |
 | 2026-11-21 | Style Finder: remembered Men/Women/All view; owner **push notifications** + upcoming list; customer **Change time**; Free/Busy/Crowded/Full crowd levels |
 | 2026-11-21 | "Near me" location is remembered (cookie) across Home/Search/tab switches |
 | 2026-11-21 | Owner Manage buttons no longer share one busy state; call-button feedback is a toast; review form closes with a confirmation and shows the submitted review |

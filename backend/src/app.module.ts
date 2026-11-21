@@ -19,6 +19,7 @@ import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
 import { StylesModule } from './modules/styles/styles.module.js';
 import { PushModule } from './common/push/push.module.js';
+import { CallsModule } from './modules/calls/calls.module.js';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { PushModule } from './common/push/push.module.js';
     PaymentsModule,
     StylesModule,
     PushModule,
+    CallsModule,
   ],
   controllers: [AppController],
   providers: [
