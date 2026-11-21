@@ -1,10 +1,23 @@
 import { z } from 'zod';
 
-const workingHoursDaySchema = z.object({
-  open: z.string().regex(/^\d{2}:\d{2}$/),
-  close: z.string().regex(/^\d{2}:\d{2}$/),
-  closed: z.boolean().default(false),
-});
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use 24-hour HH:mm, e.g. 09:30 or 23:00');
+
+const workingHoursDaySchema = z
+  .object({
+    open: hhmm,
+    close: hhmm,
+    closed: z.boolean().default(false),
+    // Times inside opening hours when nobody can book (e.g. lunch 13:00–14:00).
+    breaks: z
+      .array(z.object({ start: hhmm, end: hhmm }).refine((b) => b.end > b.start, 'Break must end after it starts'))
+      .max(3)
+      .default([]),
+  })
+  .refine((d) => d.closed || d.close > d.open, { message: 'Closing time must be after opening time', path: ['close'] })
+  .refine((d) => d.closed || d.breaks.every((b) => b.start >= d.open && b.end <= d.close), {
+    message: 'Breaks must be within opening hours',
+    path: ['breaks'],
+  });
 
 export const workingHoursSchema = z.object({
   mon: workingHoursDaySchema,

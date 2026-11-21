@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { getStoredUser } from '@/lib/auth-client';
 import type { CurrentUser } from '@/lib/types';
 
-function TabIcon({ name }: { name: 'home' | 'search' | 'salon' | 'profile' }) {
+function TabIcon({ name }: { name: 'home' | 'search' | 'styles' | 'salon' | 'profile' }) {
   const common = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   switch (name) {
     case 'home':
@@ -21,6 +21,15 @@ function TabIcon({ name }: { name: 'home' | 'search' | 'salon' | 'profile' }) {
         <svg {...common}>
           <circle cx="11" cy="11" r="7" />
           <path d="m21 21-4.3-4.3" />
+        </svg>
+      );
+    case 'styles':
+      // scissors
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12" />
         </svg>
       );
     case 'salon':
@@ -51,6 +60,7 @@ export default function MobileTabBar() {
   const tabs = [
     { href: '/', label: 'Home', icon: 'home' as const, active: pathname === '/' },
     { href: '/search', label: 'Search', icon: 'search' as const, active: pathname === '/search' },
+    { href: '/styles', label: 'Styles', icon: 'styles' as const, active: pathname === '/styles' },
     user
       ? {
           href: user.role === 'OWNER' ? '/owner' : user.role === 'ADMIN' ? '/admin' : '/account',

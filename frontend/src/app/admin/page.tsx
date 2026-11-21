@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { clearSession, getStoredUser, getToken } from '@/lib/auth-client';
 import type { AdminStats, CurrentUser, PendingBusiness } from '@/lib/types';
+import AdminStyles from '@/components/AdminStyles';
 
-type View = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'CUSTOMERS' | 'OWNERS' | 'BOOKINGS';
+type View = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'CUSTOMERS' | 'OWNERS' | 'BOOKINGS' | 'STYLES';
 
 interface AdminBusiness extends PendingBusiness {
   verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED';
@@ -45,6 +46,7 @@ const TILES: { view: View; label: string; key: keyof AdminStats }[] = [
 ];
 
 const VIEW_TITLE: Record<View, string> = {
+  STYLES: 'Style Finder catalogue',
   PENDING: 'Verification queue',
   VERIFIED: 'Verified salons',
   REJECTED: 'Rejected salons',
@@ -202,6 +204,7 @@ export default function AdminPage() {
 
   function loadView(token: string, v: View) {
     setError(null);
+    if (v === 'STYLES') return; // AdminStyles loads its own data
     if (v === 'PENDING' || v === 'VERIFIED' || v === 'REJECTED') {
       setBusinesses(null);
       apiFetch<AdminBusiness[]>(`/admin/businesses?status=${v}`, { token })
@@ -314,8 +317,26 @@ export default function AdminPage() {
           ))}
         </div>
 
+        <button
+          onClick={() => selectView('STYLES')}
+          className={`mt-2 w-full rounded-lg border p-3 text-left text-sm font-semibold transition ${
+            view === 'STYLES'
+              ? 'border-indigo-400 bg-indigo-500/20 text-slate-50 ring-1 ring-indigo-400'
+              : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-slate-500'
+          }`}
+        >
+          ✂️ Style Finder catalogue — photos &amp; styles →
+        </button>
+
         {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
 
+        {view === 'STYLES' ? (
+          <div className="mt-6">
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400">{VIEW_TITLE.STYLES}</h2>
+            <AdminStyles />
+          </div>
+        ) : (
+        <>
         <div className="mt-6 flex items-center justify-between gap-3">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-400">
             {VIEW_TITLE[view]} {list ? `(${list.length})` : ''}
@@ -395,6 +416,8 @@ export default function AdminPage() {
             </p>
           )}
         </div>
+        </>
+        )}
       </div>
     </div>
   );

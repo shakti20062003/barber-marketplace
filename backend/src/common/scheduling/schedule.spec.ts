@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   LATE_GRACE_MINUTES,
+  breaksFor,
   businessWindowFor,
   fitsWindow,
   isBlocking,
@@ -113,5 +114,47 @@ describe('fitsWindow (last booking before closing)', () => {
 
   it('never before opening', () => {
     expect(fitsWindow(...slot(8, 45, 30), w, 30)).toBe(false);
+  });
+});
+
+describe('breaks (e.g. lunch) and late closing', () => {
+  const LATE = {
+    ...HOURS,
+    mon: { open: '10:00', close: '23:00', closed: false, breaks: [{ start: '13:00', end: '14:00' }] },
+  };
+  const business = businessWindowFor(LATE, MONDAY)!;
+  const windows = staffWindowsFor(MONDAY, business, [], null, breaksFor(LATE, MONDAY));
+  const slot = (h: number, m: number, mins: number) => {
+    const start = new Date(2026, 10, 23, h, m);
+    return [start, new Date(start.getTime() + mins * 60_000)] as const;
+  };
+  const bookable = (h: number, m: number, mins: number, cutoff: number | null = null) =>
+    windows.some((w) => fitsWindow(...slot(h, m, mins), w, cutoff));
+
+  it('splits the day around lunch', () => {
+    expect(windows).toHaveLength(2);
+    expect(windows[0].end.getHours()).toBe(13);
+    expect(windows[1].start.getHours()).toBe(14);
+  });
+
+  it('nothing can be booked into lunch', () => {
+    expect(bookable(12, 0, 60)).toBe(true); // 12:00–13:00 ok
+    expect(bookable(12, 30, 60)).toBe(false); // runs into lunch
+    expect(bookable(13, 15, 30)).toBe(false); // during lunch
+    expect(bookable(14, 0, 30)).toBe(true);
+  });
+
+  it('even with a closing cut-off, services must finish before lunch', () => {
+    expect(bookable(12, 45, 60, 30)).toBe(false);
+  });
+
+  it('supports late closing (11 PM)', () => {
+    expect(bookable(22, 0, 60)).toBe(true);
+    expect(bookable(22, 15, 60)).toBe(false);
+    expect(isOpenAt(LATE, new Date(2026, 10, 23, 22, 30))).toBe(true);
+  });
+
+  it('is not "open now" during lunch', () => {
+    expect(isOpenAt(LATE, new Date(2026, 10, 23, 13, 30))).toBe(false);
   });
 });

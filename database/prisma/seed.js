@@ -316,6 +316,49 @@ const SALONS = [
   },
 ];
 
+
+// ---------------------------------------------------------------------------
+// Style Finder catalogue. Scores are 0–100 suitability per face shape, based
+// on standard face-shape styling guidance (e.g. round faces suit height on
+// top + short sides; oblong faces suit width/fringe and avoid extra height).
+// Photos are uploaded by an admin from the Admin console (Styles); until then
+// the app shows an illustrated placeholder. Upserted by (name, gender) and
+// never overwritten, so admin edits survive re-seeding.
+// ---------------------------------------------------------------------------
+const fit = (oval, round, square, heart, oblong, diamond) => ({ oval, round, square, heart, oblong, diamond });
+const STYLES = [
+  // Men
+  ['MEN', 'Classic Taper', 'Neat, gradually shorter sides with a little length on top. Office-friendly and timeless.', 'Short', 'Low', fit(95, 78, 90, 86, 80, 86)],
+  ['MEN', 'Buzz Cut', 'Even, very short all over. Zero styling, sharp and clean.', 'Short', 'Low', fit(90, 55, 95, 62, 58, 80)],
+  ['MEN', 'Crew Cut', 'Short sides with slightly longer top you can push forward or up.', 'Short', 'Low', fit(92, 70, 92, 75, 70, 85)],
+  ['MEN', 'Side Part', "Gentleman's cut with a clean parting. Smart for weddings and work.", 'Short', 'Medium', fit(95, 82, 92, 88, 85, 86)],
+  ['MEN', 'Pompadour', 'Volume swept up and back. Adds height that slims a round face.', 'Medium', 'High', fit(90, 92, 84, 70, 48, 74)],
+  ['MEN', 'Quiff', 'Front lifted up and slightly back — modern and versatile.', 'Medium', 'Medium', fit(92, 90, 85, 74, 55, 80)],
+  ['MEN', 'Undercut', 'Very short or shaved sides with a longer, contrasting top.', 'Medium', 'Medium', fit(90, 85, 88, 74, 64, 80)],
+  ['MEN', 'French Crop', 'Short textured top with a straight fringe. Softens a long forehead.', 'Short', 'Low', fit(90, 70, 88, 86, 90, 90)],
+  ['MEN', 'Textured Fringe', 'Messy, piecey fringe brushed forward. Great for a high forehead.', 'Medium', 'Medium', fit(88, 72, 85, 90, 93, 88)],
+  ['MEN', 'Faux Hawk', 'Short sides with a raised strip on top — edgy without the full mohawk.', 'Medium', 'Medium', fit(88, 90, 80, 64, 48, 72)],
+  ['MEN', 'Slick Back', 'Longer top combed straight back with a glossy finish.', 'Medium', 'High', fit(92, 64, 90, 70, 58, 75)],
+  ['MEN', 'Medium Flow', 'Longer, natural-flowing hair around the ears. Relaxed and stylish.', 'Long', 'Medium', fit(90, 62, 85, 86, 88, 86)],
+  ['MEN', 'Curly Top Fade', 'Natural curls on top with a faded back and sides.', 'Medium', 'Medium', fit(88, 76, 85, 82, 74, 85)],
+  ['MEN', 'Man Bun', 'Long hair tied up neatly at the back or top.', 'Long', 'Medium', fit(86, 60, 86, 74, 68, 80)],
+  // Women
+  ['WOMEN', 'Long Layers', 'Soft layers through long hair for movement and volume.', 'Long', 'Medium', fit(95, 88, 90, 85, 74, 88)],
+  ['WOMEN', 'Bob', 'Chin-length, sleek and classic. Adds width to a long face.', 'Short', 'Medium', fit(92, 62, 70, 88, 90, 84)],
+  ['WOMEN', 'Lob (Long Bob)', 'Collarbone-length bob — easy, flattering on most faces.', 'Medium', 'Low', fit(92, 86, 88, 88, 85, 88)],
+  ['WOMEN', 'Pixie Cut', 'Short and bold. Shows off cheekbones and eyes.', 'Short', 'Low', fit(90, 55, 64, 92, 58, 86)],
+  ['WOMEN', 'Curtain Bangs', 'Face-framing bangs parted in the middle. Shortens a long face.', 'Medium', 'Medium', fit(90, 80, 88, 92, 95, 85)],
+  ['WOMEN', 'Butterfly Cut', 'Voluminous layers that look short in front and long at the back.', 'Long', 'Medium', fit(92, 88, 88, 85, 76, 85)],
+  ['WOMEN', 'Wolf Cut', 'Shaggy, textured layers with volume on top — trendy and edgy.', 'Medium', 'Medium', fit(88, 74, 82, 85, 86, 82)],
+  ['WOMEN', 'Shag Cut', 'Choppy layers and texture throughout for an effortless look.', 'Medium', 'Medium', fit(90, 78, 85, 88, 88, 85)],
+  ['WOMEN', 'Blunt Cut', 'One clean line at the ends for thick-looking, sleek hair.', 'Medium', 'Low', fit(92, 60, 64, 82, 86, 80)],
+  ['WOMEN', 'Side-Swept Bangs', 'Long fringe swept to one side. Softens angles and slims round faces.', 'Medium', 'Medium', fit(88, 90, 88, 92, 85, 88)],
+  ['WOMEN', 'Feather Cut', 'Light, wispy layers that flick outward — a soft classic.', 'Long', 'Medium', fit(90, 85, 88, 85, 80, 85)],
+  ['WOMEN', 'U-Cut', 'Layers shaped into a soft U at the back. Easy everyday style.', 'Long', 'Low', fit(90, 82, 85, 85, 74, 85)],
+  ['WOMEN', 'Step Cut', 'Distinct stepped layers for volume and bounce.', 'Long', 'Medium', fit(90, 85, 85, 85, 78, 85)],
+  ['WOMEN', 'Beach Waves', 'Shoulder-length hair with loose, relaxed waves.', 'Medium', 'High', fit(90, 82, 90, 86, 88, 86)],
+];
+
 async function main() {
   for (const name of ['Men', 'Women', 'Unisex', 'Spa']) {
     const existing = await prisma.category.findFirst({ where: { name } });
@@ -379,14 +422,9 @@ async function main() {
           languages: s.languages,
         },
       });
-      await prisma.staffAvailability.createMany({
-        data: [1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
-          staffId: staff.id,
-          dayOfWeek,
-          startTime: '09:00',
-          endTime: '20:00',
-        })),
-      });
+      // No per-stylist shift hours: stylists follow the salon's opening hours
+      // (which owners can edit). Seeding fixed 09:00–20:00 shifts here used to
+      // cap late-closing salons at 8 PM, with no owner UI to change it.
       staffRecords.push(staff);
     }
 
@@ -456,6 +494,17 @@ async function main() {
     update: {},
     create: { name: 'Trimly Admin', phone: '+919800000099', role: 'ADMIN', authProvider: 'PHONE_OTP' },
   });
+
+  let styleOrder = 0;
+  for (const [gender, name, description, length, maintenance, faceShapeFit] of STYLES) {
+    await prisma.hairStyle.upsert({
+      where: { name_gender: { name, gender } },
+      update: {}, // never overwrite admin edits / uploaded photos
+      create: { name, gender, description, length, maintenance, faceShapeFit, order: styleOrder },
+    });
+    styleOrder++;
+  }
+  console.log(`Style Finder catalogue: ${STYLES.length} styles ensured`);
 
   console.log('Seeded salons:', seeded);
   console.log('Admin login phone: +919800000099 (use the normal OTP login — devOtp shows in dev)');

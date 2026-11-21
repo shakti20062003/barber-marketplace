@@ -17,6 +17,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
+import { StylesModule } from './modules/styles/styles.module.js';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { PaymentsModule } from './modules/payments/payments.module.js';
     AdminModule,
     CatalogModule,
     PaymentsModule,
+    StylesModule,
   ],
   controllers: [AppController],
   providers: [

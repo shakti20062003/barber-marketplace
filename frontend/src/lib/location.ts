@@ -15,6 +15,21 @@ export const FALLBACK_LOCATION = { lat: 19.076, lng: 72.8777 };
 
 export type LocationSource = 'url' | 'saved' | 'fallback';
 
+/** "Salons within X km" — customer-chosen, remembered like the location. */
+export const RADIUS_COOKIE = 'trimly_radius';
+export const RADIUS_OPTIONS = [2, 5, 7, 10, 15] as const;
+export const DEFAULT_RADIUS_KM = 7;
+
+export function parseRadius(value: string | undefined | null): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 && n <= 50 ? n : null;
+}
+
+/** Browser only. */
+export function saveRadius(km: number) {
+  document.cookie = `${RADIUS_COOKIE}=${km}; Max-Age=${MAX_AGE_SECONDS}; Path=/; SameSite=Lax`;
+}
+
 /** "19.0760,72.8777" → coordinates, or null if missing / malformed. */
 export function parseLocation(value: string | undefined | null): { lat: number; lng: number } | null {
   if (!value) return null;

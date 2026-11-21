@@ -493,3 +493,40 @@ service may run past closing.
   Near me". Verified on the production build with cookies: plain `/` and
   `/search` with a saved Bangalore location list Bangalore salons; no or
   invalid cookie → Mumbai; an explicit URL location wins.
+
+## 2026-11-21 — Founder batch 3 (in progress)
+
+1. Salon hours list: Wednesday's "09:00–19:00" overflows; days in random order.
+2. Owner-editable working hours per day (incl. late closing, e.g. 11 PM) and
+   breaks (e.g. lunch) that customers can't book.
+3. Customer-chosen search radius ("salons within 5 / 7 km").
+4. Home: "Featured salons in your area" + salon achievements so owners
+   feel valued.
+5. New "Style Finder" tab: men's + women's haircut catalogue with names;
+   customer takes a clear face photo; a "Compare" button shows how well
+   each cut suits their face (%).
+
+### Done (founder batch 3, 2026-11-21)
+
+1. Hours list: new `HoursList` (Mon→Sun, one row per day, today
+   highlighted, breaks shown). Cause of the shuffled order: Postgres JSONB
+   reorders keys.
+2. Owner hours editor (open/close per day up to 23:59, closed toggle, up
+   to 3 breaks, copy to all days) + backend breaks support in
+   `common/scheduling` (+5 tests, 20 total). Found during testing: seeded
+   stylist shifts (09–20) capped late-closing salons at 8 PM. The seed no
+   longer creates them, and migration `remove_seeded_staff_shifts` deletes
+   exactly that seeded pattern.
+3. Radius chips (2/5/7/10/15 km, default 7, remembered in a cookie), with
+   "Search within N km" when empty.
+4. "✨ Featured salons in your area" + computed achievements (cards, salon
+   page, owner dashboard with progress bars).
+5. Style Finder: `/styles` tab, 28 seeded styles (`hair_styles` table,
+   migration `style_finder`), public + admin API, admin photo upload,
+   in-browser face-shape analysis (MediaPipe from CDN) with per-style match
+   %. Photos are placeholders until an admin uploads licensed images.
+- Verified: API script (15 checks: styles, achievements, radius, hours
+  validation, lunch excluded from slots, late slots to 22:30); browser on
+  the production build: Style Finder analysed a sample portrait (Oval 54%,
+  matches 76–91%, sorted), salon hours list, owner achievements, hours
+  editor at ~280px width.

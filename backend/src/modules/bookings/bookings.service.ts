@@ -14,6 +14,7 @@ import { generateBookingOtp, hashBookingOtp } from './otp.util.js';
 import { CallBridgeService } from './call-bridge.service.js';
 import {
   BLOCKING_STATUSES,
+  breaksFor,
   businessWindowFor,
   dbDateFor,
   fitsWindow,
@@ -110,6 +111,7 @@ export class BookingsService {
       businessWindowFor(staff.business.workingHours, day),
       staff.availability,
       override,
+      breaksFor(staff.business.workingHours, day),
     );
     return windows.some((w) => fitsWindow(slotStart, slotEnd, w, staff.business.lastBookingCutoffMinutes));
   }

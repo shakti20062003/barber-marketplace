@@ -3,16 +3,7 @@ import { notFound } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import type { BusinessDetail } from '@/lib/types';
 import { directionsUrl, formatHhmm } from '@/lib/image';
-
-const DAY_LABELS: Record<string, string> = {
-  mon: 'Monday',
-  tue: 'Tuesday',
-  wed: 'Wednesday',
-  thu: 'Thursday',
-  fri: 'Friday',
-  sat: 'Saturday',
-  sun: 'Sunday',
-};
+import HoursList from '@/components/HoursList';
 
 const BADGE_LABEL: Record<string, string> = {
   VERIFIED: '✓ Verified',
@@ -106,6 +97,20 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
           </a>
         </div>
 
+        {business.achievements.length > 0 && (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {business.achievements.map((a) => (
+              <span
+                key={a.key}
+                className="flex shrink-0 items-center gap-1 rounded-full border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-2.5 py-1 text-xs font-semibold text-amber-800"
+              >
+                <span aria-hidden>{a.emoji}</span>
+                {a.label}
+              </span>
+            ))}
+          </div>
+        )}
+
         {business.description && <p className="mt-3 text-sm text-foreground/80">{business.description}</p>}
 
         <section className="mt-6">
@@ -162,16 +167,7 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
 
         <section className="mt-6">
           <h2 className="mb-2 text-lg font-semibold">Hours</h2>
-          <div className="rounded-xl border border-border bg-surface p-3">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-3">
-              {Object.entries(business.workingHours).map(([day, hours]) => (
-                <div key={day} className="flex justify-between">
-                  <span className="text-muted">{DAY_LABELS[day] ?? day}</span>
-                  <span className="font-medium">{hours.closed ? 'Closed' : `${hours.open}–${hours.close}`}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <HoursList hours={business.workingHours} />
         </section>
 
         <section className="mt-6">

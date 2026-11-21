@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { clearSession, getToken, getStoredUser } from '@/lib/auth-client';
-import type { CurrentUser } from '@/lib/types';
+import type { Achievement, CurrentUser } from '@/lib/types';
 import AvatarPicker from '@/components/AvatarPicker';
 import CallButton from '@/components/CallButton';
 import { formatTime } from '@/lib/image';
@@ -37,6 +37,56 @@ interface Dashboard {
   todaysBookings: DashboardBooking[];
   cancellationsToday: number;
   revenueToday: number;
+  achievements: Achievement[];
+}
+
+function Achievements({ list }: { list: Achievement[] }) {
+  const earned = list.filter((a) => a.earned);
+  const next = list.filter((a) => !a.earned);
+  return (
+    <section className="mt-6">
+      <h2 className="text-lg font-semibold">🏆 Your achievements</h2>
+      <p className="text-sm text-muted">
+        {earned.length > 0
+          ? `You've earned ${earned.length} — customers see these on your salon. Keep it up!`
+          : 'Every happy customer and good review brings you closer. Customers see these on your salon.'}
+      </p>
+      {earned.length > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {earned.map((a) => (
+            <div key={a.key} className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-3">
+              <p className="text-2xl" aria-hidden>{a.emoji}</p>
+              <p className="mt-1 text-sm font-bold text-amber-900">{a.label}</p>
+              <p className="text-xs text-amber-800/80">{a.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {next.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {next.map((a) => (
+            <div key={a.key} className="rounded-xl border border-border bg-surface p-3">
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="font-medium">
+                  <span aria-hidden className="opacity-50">{a.emoji}</span> {a.label}
+                </span>
+                <span className="text-xs text-muted">
+                  {a.progress.current}/{a.progress.target}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                <div
+                  className="h-full rounded-full bg-brand"
+                  style={{ width: `${Math.round((a.progress.current / a.progress.target) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted">{a.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 const STATUS_PILL: Record<string, string> = {
@@ -382,6 +432,8 @@ export default function OwnerPage() {
           <p className="p-3 text-sm text-muted">No bookings today yet.</p>
         )}
       </div>
+
+      {dashboard?.achievements && <Achievements list={dashboard.achievements} />}
     </div>
   );
 }

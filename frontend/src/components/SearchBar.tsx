@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { saveLocation } from '@/lib/location';
+import { RADIUS_OPTIONS, saveLocation, saveRadius } from '@/lib/location';
 
 const CATEGORIES = [
   { value: '', label: 'All', emoji: '✨' },
@@ -16,10 +16,13 @@ export default function SearchBar({
   basePath = '/search',
   showTextInput = true,
   showFilters = true,
+  radiusKm,
 }: {
   basePath?: string;
   showTextInput?: boolean;
   showFilters?: boolean;
+  /** Current search radius (resolved on the server from URL / saved choice). */
+  radiusKm?: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -125,6 +128,30 @@ export default function SearchBar({
               </button>
             ))}
           </div>
+
+          {radiusKm != null && (
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-xs font-medium text-muted">Within</span>
+              <div className="flex gap-1.5 overflow-x-auto">
+                {RADIUS_OPTIONS.map((km) => (
+                  <button
+                    key={km}
+                    onClick={() => {
+                      saveRadius(km);
+                      applyParams({ radiusKm: String(km) });
+                    }}
+                    className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                      radiusKm === km
+                        ? 'border-foreground bg-foreground text-white'
+                        : 'border-border bg-surface text-foreground hover:border-foreground/40'
+                    }`}
+                  >
+                    {km} km
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {locationError && <p className="text-xs text-amber-700">{locationError}</p>}
         </>

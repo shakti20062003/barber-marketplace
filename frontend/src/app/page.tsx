@@ -6,6 +6,7 @@ import SearchBar from '@/components/SearchBar';
 import CompareSection from '@/components/CompareSection';
 
 import { resolveSearchLocation } from '@/lib/location-server';
+import { RADIUS_OPTIONS } from '@/lib/location';
 
 export default async function Page(props: PageProps<'/'>) {
   const sp = await props.searchParams;
@@ -13,6 +14,11 @@ export default async function Page(props: PageProps<'/'>) {
   const params = new URLSearchParams();
   params.set('lat', location.lat);
   params.set('lng', location.lng);
+  params.set('radiusKm', String(location.radiusKm));
+  const widerRadius = RADIUS_OPTIONS.find((km) => km > location.radiusKm);
+  const widenParams = new URLSearchParams(params);
+  if (widerRadius) widenParams.set('radiusKm', String(widerRadius));
+  widenParams.delete('limit');
   if (sp.category) params.set('category', sp.category as string);
   if (sp.openNow) params.set('openNow', sp.openNow as string);
   params.set('limit', '6');
@@ -50,16 +56,18 @@ export default async function Page(props: PageProps<'/'>) {
 
       <section className="border-b border-border bg-surface px-4 py-4">
         <div className="mx-auto max-w-5xl">
-          <SearchBar basePath="/" showTextInput={false} />
+          <SearchBar basePath="/" showTextInput={false} radiusKm={location.radiusKm} />
         </div>
       </section>
 
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold">Nearby salons</h2>
+            <h2 className="text-lg font-semibold">✨ Featured salons in your area</h2>
             <p className="truncate text-xs text-muted">
-              {location.source === 'fallback' ? 'Showing Mumbai · tap 📍 Near me for salons around you' : '📍 Near your location'}
+              {location.source === 'fallback'
+                ? `Mumbai · within ${location.radiusKm} km · tap 📍 Near me for your area`
+                : `📍 Within ${location.radiusKm} km of you`}
             </p>
           </div>
           <Link
@@ -82,9 +90,18 @@ export default async function Page(props: PageProps<'/'>) {
 
         {data && data.results.length === 0 && !error && (
           <div className="rounded-2xl border border-dashed border-border py-10 text-center text-sm text-muted">
-            No salons found nearby yet.
-            <br />
-            Try widening your search or check back once more salons onboard.
+            No salons within {location.radiusKm} km yet.
+            {widerRadius && (
+              <>
+                <br />
+                <Link
+                  href={`/?${widenParams.toString()}`}
+                  className="mt-3 inline-block rounded-full bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground"
+                >
+                  Search within {widerRadius} km
+                </Link>
+              </>
+            )}
           </div>
         )}
 

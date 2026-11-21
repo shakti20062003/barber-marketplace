@@ -27,6 +27,9 @@ export default function Nav() {
           Trimly
         </Link>
         <nav className="hidden items-center gap-4 text-sm sm:flex">
+          <Link href="/styles" className="font-medium text-muted hover:text-foreground">
+            ✂️ Style Finder
+          </Link>
           {user?.role === 'OWNER' && (
             <Link href="/owner" className="font-medium text-muted hover:text-foreground">
               My salon

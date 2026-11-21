@@ -12,7 +12,7 @@ run and deploy it, and the rules that are easy to break by accident.
 | `PROGRESS.md` | Dated build log: what changed, when, and why. |
 | `README.md` | Quick local-setup commands. |
 
-_Last updated: 2026-11-21 (first release)._
+_Last updated: 2026-11-21 (first release + founder batch 3)._
 
 ---
 
@@ -260,11 +260,23 @@ disagree. If you change a rule, change it here and add a test in
 - **Date-only columns.** Postgres `@db.Date` columns (staff day-off
   overrides, waitlist dates) must be queried with `dbDateFor(localDay)`.
   Local midnight in IST is the *previous* day in UTC.
+- **Owner-editable hours** (Manage → Opening hours, `WorkingHoursEditor`):
+  per day `{open, close, closed, breaks: [{start, end}]}`, any time up to
+  23:59, up to 3 breaks a day. Validated in `create-business.dto.ts` (close
+  after open, breaks inside hours). **Breaks** (e.g. lunch) split the day
+  (`breaksFor` / `subtractBreaks`); a service must always finish before a
+  break starts, even when the closing cut-off is relaxed. A salon on its
+  break is not "open now". The salon page shows hours with `HoursList`,
+  always Monday → Sunday (Postgres JSONB doesn't keep key order).
 - **Salon hours always win.** A stylist's hours are clipped to the salon's
   hours for that day. On a closed day there are **no slots** (this used to
   allow booking a salon shown as "Closed").
-- **Stylists with no hours configured** (anyone added from the owner screen)
-  default to the salon's full hours.
+- **Stylists with no hours configured** default to the salon's full hours.
+  There is **no owner UI for per-stylist shifts**, so in practice every
+  stylist follows the salon's hours. The seed used to give demo stylists a
+  fixed 09:00–20:00 shift, which capped late-closing salons at 8 PM; it no
+  longer does, and migration `remove_seeded_staff_shifts` deleted those
+  rows.
 - **Start times** are offered every **15 minutes** (`SLOT_STEP_MINUTES`).
 - **Last booking of the day** (`fitsWindow`):
   - Default (`Business.lastBookingCutoffMinutes = null`): the **whole
@@ -349,6 +361,12 @@ The `CLOUDINARY_*` env vars already exist.
 
 ### 7.5 Location and maps
 
+**Search radius.** The customer picks "Within 2 / 5 / 7 / 10 / 15 km"
+(chips in `SearchBar`, saved in the `trimly_radius` cookie, default **7 km**).
+It's resolved in `resolveSearchLocation()` the same way as the location
+(URL → cookie → default). An empty result offers "Search within N km" with
+the next size up.
+
 **Customer search location.** "Near me" saves the coordinates in a
 `trimly_loc` cookie (30 days, `lib/location.ts`). Home and Search are server
 components and resolve the location with `resolveSearchLocation()`
@@ -364,6 +382,54 @@ landmark. Customers see an **OpenStreetMap embed** and a **Google Maps
 directions link**. Neither needs an API key. New salons created without GPS
 default to Mumbai's coordinates, so owners should set their location.
 
+### 7.6 Featured salons and achievements — `modules/businesses/achievements.ts`
+
+The home list is presented as **"✨ Featured salons in your area"** (the
+ranked nearby results). Salons earn **achievements** automatically from real
+data. They're computed on each request, nothing is stored, and a salon is
+never shown an achievement it hasn't earned:
+
+| Achievement | Rule |
+|---|---|
+| 🚀 Rising Star | First 90 days on Trimly, ≥1 review, rating ≥ 4★ |
+| ⭐ Top Rated | Rating ≥ 4.5★ from ≥ 3 reviews |
+| 🔥 5-Star Streak | Last 3 reviews all 5★ |
+| 🎉 / 🏅 / 🏆 | 10 / 50 / 100 completed visits |
+| 💬 Much Loved | ≥ 25 reviews |
+
+Customers see earned ones on cards (top one) and the salon page (all).
+Owners see all of them on their dashboard, with progress bars toward the
+ones not yet earned. To add one, add it to `computeAchievements()` and the
+`PRIORITY` list.
+
+### 7.7 Style Finder — `/styles`, `frontend/src/lib/faceShape.ts`, `modules/styles`
+
+A tab where customers browse men's and women's cuts and see how well each
+suits their face.
+
+- **Catalogue:** `hair_styles` table (name, gender, description, length,
+  upkeep, `faceShapeFit` = 0–100 per shape: oval, round, square, heart,
+  oblong, diamond; `imageUrl`). 28 starter styles (14 + 14) are seeded with
+  scores from standard face-shape styling guidance. They're upserted by
+  (name, gender) and **never overwritten**, so admin edits survive re-seeding.
+- **Photos:** the app has no licensed hairstyle photos, so styles show an
+  illustrated placeholder until an admin uploads a picture (Admin → "Style
+  Finder catalogue"; same on-device resize + data-URL storage as other
+  uploads). Admins can also add styles and hide them.
+- **Face analysis runs entirely in the browser; the photo is never
+  uploaded.** Google MediaPipe Face Landmarker (`@mediapipe/tasks-vision@0.10.14`
+  plus the float16 model, ~4 MB) is **loaded at runtime from jsDelivr / Google
+  Storage**, not bundled. That keeps it out of the bundle and out of the
+  lockfile (see the Linux lockfile gotcha). The landmarks give three
+  proportions (length ÷ cheekbone width, jaw ÷ cheekbone, forehead ÷
+  cheekbone), compared with typical values for each shape to get
+  probabilities. Match % = Σ P(shape) × the style's score for that shape.
+  Photo checks: no face, more than one face, face too small, head turned.
+- **It's an estimate.** The prototype proportions in `faceShape.ts` are
+  hand-calibrated; the UI says it's a styling guide, not a guarantee.
+  Verified end to end on a sample portrait (Oval, 54%, matches 76–91%). If
+  results look skewed on real users, tune `PROTOTYPES` / `SPREAD`.
+
 ---
 
 ## 8. Frontend page map (`frontend/src/app`)
@@ -374,12 +440,13 @@ default to Mumbai's coordinates, so owners should set their location.
 | `/search` | everyone | Full search |
 | `/salons/[id]` | everyone | Salon profile (server-rendered for SEO): open status, services with photos, stylists, hours, map + directions, reviews |
 | `/salons/[id]/book` | customer | Service → date chips (closed days marked) → colour-coded times → confirm. Confirmation shows the code and the "reach on time" notice |
+| `/styles` | everyone | **Style Finder**: selfie/upload → face shape → "Compare with my face" per cut (match %), "Compare all", best matches first, Women's/Men's toggle |
 | `/compare?a=&b=` | everyone | Side-by-side comparison; ✓ marks the better value; same-name services priced side by side |
 | `/login` | everyone | Phone + OTP; redirects by role (or to `?next=`) |
 | `/account` | customer | Profile + photo, Upcoming / Past bookings. Tap a booking for details: code, add services, call salon, directions, cancel, review |
 | `/owner` | owner | First-time salon setup, or the dashboard: today's bookings with Arrived / Complete (code) / No-show / Cancel / Call, refreshed every minute |
-| `/owner/manage` | owner | Photos (upload from phone), location, last booking time, services (+ photos), staff |
-| `/admin` | admin | Clickable stat tiles → searchable lists: salons by status (verify / reject / unlist), customers, owners, bookings |
+| `/owner/manage` | owner | Photos (upload from phone), location, **opening hours + breaks**, last booking time, services (+ photos), staff |
+| `/admin` | admin | Clickable stat tiles → searchable lists: salons by status (verify / reject / unlist), customers, owners, bookings; **Style Finder catalogue** (upload style photos, add/hide styles) |
 
 Frontend conventions:
 
@@ -421,6 +488,8 @@ Frontend conventions:
 | `GET /businesses/:id/availability` | 🔓 | `serviceId, date (YYYY-MM-DD), staffId?` → `{closed, hours, grid[], slots[]}` |
 | `GET /businesses/:id/reviews` | 🔓 | Reviews |
 | `GET /cities` · `GET /categories` | 🔓 | Catalog |
+| `GET /styles?gender=MEN\|WOMEN` | 🔓 | Style Finder catalogue (active styles) |
+| `GET /admin/styles` · `POST /admin/styles` · `PATCH /admin/styles/:id` | admin | Manage styles (`imageUrl`, `active`, `faceShapeFit`, …) |
 | `POST /bookings` | customer | Create `{businessId, serviceId, staffId?, slotStart, paymentMethod:'PAY_AT_SHOP'}` → returns `otp` |
 | `GET /bookings/me` | customer | My bookings (with `confirmationCode`, `addOns`, `totalAmount`, `review {rating, text}` once reviewed) |
 | `POST /bookings/:id/add-services` | customer | `{serviceIds[]}` |
@@ -459,6 +528,7 @@ Frontend conventions:
 | `bookings` | `slotStart`, `slotEnd`, `status`, `otpHash`, `otpCode`, `staffId` | `slotEnd` includes add-ons |
 | `booking_add_ons` | `bookingId`, `serviceId`, `price`, `durationMinutes` | Price copied at the time it's added |
 | `payments` | `amount`, `status`, `provider` (`cash`/`razorpay`) | Amount grows with add-ons while unpaid |
+| `hair_styles` | `name`, `gender`, `faceShapeFit` (JSON), `imageUrl`, `active` | Style Finder catalogue |
 | `reviews`, `business_media`, `business_trust_badges`, `waitlist_entries`, `audit_logs`, … | | |
 
 Migrations live in `database/prisma/migrations/` and are applied on Render
@@ -477,7 +547,8 @@ by `prisma migrate deploy` during the backend build.
 | Image storage | Inline data URLs in Postgres | Cloudinary/S3 |
 | Rate limiting | Only OTP routes | `@nestjs/throttler` doesn't support Nest 12 yet |
 | Google/email login, home-service bookings, loyalty/referrals/wallet | Not built | V2/V3 per PRD |
-| Owner editing of working hours | API supports it, no UI yet | Add an hours editor to `/owner/manage` |
+| Per-stylist shifts / days off | Data model + scheduling support it, no owner UI | Add a staff-hours editor (all stylists follow salon hours today) |
+| Style Finder photos | Illustrated placeholders | Admin uploads licensed photos (Admin → Style Finder catalogue) |
 | Multi-salon owners | UI uses the owner's first salon | Salon switcher |
 
 Search for `TODO` in `backend/src` to see every stubbed call site.
@@ -514,5 +585,6 @@ Search for `TODO` in `backend/src` to see every stubbed call site.
 | 2026-11-21 | Founder phone-test fixes: IST timezone (slots started at 2:30 PM), salon-hours clipping (closed salons were bookable), 10-min late grace + owner check-in/no-show, busy-colour slots, confirmation code under Upcoming, add-on services, masked calling (Exotel), clickable admin lists, device photo uploads + profile pictures, salon location + map/directions, **Compare salons**; security fix for cross-salon service/staff edits; online payment disabled until live |
 | 2026-11-21 | Owner setting "accept bookings until X min before closing" |
 | 2026-11-21 | Fixed booking page rendering wider than the phone screen ("opens zoomed in") |
+| 2026-11-21 | Hours list in Mon→Sun order (no overflow); owner hours editor with late closing + breaks; search radius picker; "Featured salons in your area" + achievements; **Style Finder** |
 | 2026-11-21 | "Near me" location is remembered (cookie) across Home/Search/tab switches |
 | 2026-11-21 | Owner Manage buttons no longer share one busy state; call-button feedback is a toast; review form closes with a confirmation and shows the submitted review |

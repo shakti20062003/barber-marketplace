@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { getStoredUser, getToken } from '@/lib/auth-client';
-import type { CurrentUser, OwnerBusinessDetail, Service } from '@/lib/types';
+import type { CurrentUser, OwnerBusinessDetail, Service, WorkingHours } from '@/lib/types';
+import WorkingHoursEditor from '@/components/WorkingHoursEditor';
 import { fileToResizedDataUrl, formatHhmm } from '@/lib/image';
 
 const CUTOFF_OPTIONS = [0, 15, 30, 45, 60, 90, 120];
@@ -197,7 +198,7 @@ export default function OwnerManagePage() {
   const [showUrlInput, setShowUrlInput] = useState(false);
   // Which action is in flight, so each button shows its own progress
   // (one shared boolean made "Save location" show "Uploading…" on the photo button).
-  type BusyAction = 'photos' | 'photoLink' | 'location' | 'cutoff' | 'service' | 'servicePhoto' | 'staff';
+  type BusyAction = 'photos' | 'photoLink' | 'location' | 'hours' | 'cutoff' | 'service' | 'servicePhoto' | 'staff';
   const [busy, setBusy] = useState<BusyAction | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [location, setLocation] = useState<{ lat: string; lng: string; address: string }>({ lat: '', lng: '', address: '' });
@@ -388,6 +389,26 @@ export default function OwnerManagePage() {
     }
   }
 
+  async function saveHours(workingHours: WorkingHours): Promise<boolean> {
+    if (!token || !business) return false;
+    setBusy('hours');
+    setError(null);
+    try {
+      await apiFetch(`/owner/businesses/${business.id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ workingHours }),
+      });
+      reload(business.id, token);
+      return true;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save opening hours');
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function saveCutoff(lastBookingCutoffMinutes: number | null) {
     if (!token || !business) return;
     setBusy('cutoff');
@@ -545,6 +566,10 @@ export default function OwnerManagePage() {
         >
           {busy === 'location' ? 'Saving…' : 'Save location'}
         </button>
+      </Section>
+
+      <Section title="Opening hours">
+        <WorkingHoursEditor initial={business.workingHours} saving={busy === 'hours'} onSave={saveHours} />
       </Section>
 
       <BookingHoursSection key={String(business.lastBookingCutoffMinutes)} business={business} busy={busy === 'cutoff'} onSave={saveCutoff} />

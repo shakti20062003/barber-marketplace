@@ -8,9 +8,11 @@ import type { CreateServiceDto, UpdateServiceDto } from './dto/service.dto.js';
 import type { CreateStaffDto, UpdateStaffDto } from './dto/staff.dto.js';
 import type { AvailabilityQueryDto } from './dto/availability-query.dto.js';
 import type { CreateMediaDto } from './dto/media.dto.js';
+import { computeAchievements, earnedBadges } from './achievements.js';
 import {
   SLOT_STEP_MINUTES,
   BLOCKING_STATUSES,
+  breaksFor,
   businessWindowFor,
   dbDateFor,
   fitsWindow,
@@ -55,7 +57,8 @@ export class BusinessesService {
       include: {
         media: { orderBy: { order: 'asc' }, take: 1 },
         services: { where: { active: true }, orderBy: { price: 'asc' }, take: 1 },
-        reviews: { select: { rating: true } },
+        reviews: { select: { rating: true }, orderBy: { createdAt: 'desc' } },
+        _count: { select: { bookings: { where: { status: { in: ['COMPLETED', 'REVIEWED'] } } } } },
         trustBadges: true,
         homeServiceAreas: true,
       },
@@ -93,6 +96,15 @@ export class BusinessesService {
           startingPrice: b.services[0]?.price ?? null,
           openNow,
           todayHours: todaysHours(b.workingHours),
+          achievements: earnedBadges(
+            computeAchievements({
+              avgRating,
+              reviewCount: b.reviews.length,
+              recentRatings: b.reviews.slice(0, 5).map((r) => r.rating),
+              completedVisits: b._count.bookings,
+              createdAt: b.createdAt,
+            }),
+          ),
           trustBadges: b.trustBadges.map((t) => t.badgeType),
           score,
         };
@@ -152,7 +164,34 @@ export class BusinessesService {
       // Unverified salons must never leak into results (§4.4).
       throw new NotFoundException('Business not found');
     }
-    return { ...business, openNow: isOpenAt(business.workingHours), todayHours: todaysHours(business.workingHours) };
+    const achievements = await this.achievementsFor(business.id, business.createdAt);
+    return {
+      ...business,
+      openNow: isOpenAt(business.workingHours),
+      todayHours: todaysHours(business.workingHours),
+      achievements: earnedBadges(achievements),
+    };
+  }
+
+  /** Full achievement list (earned + progress) from all-time reviews and completed visits. */
+  private async achievementsFor(businessId: string, createdAt: Date) {
+    const [agg, recent, completedVisits] = await Promise.all([
+      this.prisma.review.aggregate({ where: { businessId }, _avg: { rating: true }, _count: true }),
+      this.prisma.review.findMany({
+        where: { businessId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { rating: true },
+      }),
+      this.prisma.booking.count({ where: { businessId, status: { in: ['COMPLETED', 'REVIEWED'] } } }),
+    ]);
+    return computeAchievements({
+      avgRating: agg._avg.rating ?? 0,
+      reviewCount: agg._count,
+      recentRatings: recent.map((r) => r.rating),
+      completedVisits,
+      createdAt,
+    });
   }
 
   async findByOwner(ownerUserId: string) {
@@ -299,6 +338,7 @@ export class BusinessesService {
     const now = new Date();
     const blocking = bookings.filter((b) => isBlocking(b, now));
     const dow = day.getDay();
+    const salonBreaks = breaksFor(business.workingHours, day);
     const staffWindows = staffList.map((s) => ({
       id: s.id,
       windows: staffWindowsFor(
@@ -306,6 +346,7 @@ export class BusinessesService {
         businessWindow,
         s.availability.filter((a) => a.dayOfWeek === dow),
         overrides.find((o) => o.staffId === s.id) ?? null,
+        salonBreaks,
       ),
     }));
 
@@ -342,7 +383,8 @@ export class BusinessesService {
   }
 
   async ownerDashboard(ownerUserId: string, businessId: string) {
-    await this.assertOwnership(businessId, ownerUserId);
+    const owned = await this.assertOwnership(businessId, ownerUserId);
+    const achievements = await this.achievementsFor(businessId, owned.createdAt);
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -381,6 +423,7 @@ export class BusinessesService {
       })),
       cancellationsToday,
       revenueToday: revenueAgg._sum.amount ?? 0,
+      achievements,
     };
   }
 }

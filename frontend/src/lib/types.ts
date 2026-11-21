@@ -1,3 +1,46 @@
+export interface DayHours {
+  open: string;
+  close: string;
+  closed: boolean;
+  /** Not bookable, e.g. lunch. */
+  breaks?: { start: string; end: string }[];
+}
+
+export type WorkingHours = Record<string, DayHours>;
+
+export interface TodayHours {
+  open: string;
+  close: string;
+  breaks: { start: string; end: string }[];
+}
+
+/** Earned salon achievement, as shown to customers. */
+export interface AchievementBadge {
+  key: string;
+  emoji: string;
+  label: string;
+}
+
+/** Full achievement with progress, for the owner dashboard. */
+export interface Achievement extends AchievementBadge {
+  description: string;
+  earned: boolean;
+  progress: { current: number; target: number };
+}
+
+export interface HairStyle {
+  id: string;
+  name: string;
+  gender: 'MEN' | 'WOMEN';
+  description: string;
+  length: 'Short' | 'Medium' | 'Long';
+  maintenance: 'Low' | 'Medium' | 'High';
+  faceShapeFit: Record<'oval' | 'round' | 'square' | 'heart' | 'oblong' | 'diamond', number>;
+  imageUrl: string | null;
+  active: boolean;
+  order: number;
+}
+
 export interface BusinessCard {
   id: string;
   name: string;
@@ -8,7 +51,8 @@ export interface BusinessCard {
   distanceKm: number;
   startingPrice: number | null;
   openNow: boolean;
-  todayHours: { open: string; close: string } | null;
+  todayHours: TodayHours | null;
+  achievements: AchievementBadge[];
   trustBadges: string[];
 }
 
@@ -71,8 +115,9 @@ export interface BusinessDetail {
   lng: number;
   address: string | null;
   openNow: boolean;
-  todayHours: { open: string; close: string } | null;
-  workingHours: Record<string, { open: string; close: string; closed: boolean }>;
+  todayHours: TodayHours | null;
+  achievements: AchievementBadge[];
+  workingHours: WorkingHours;
   city: { name: string; state: string | null };
   media: { id: string; url: string; type: string }[];
   trustBadges: TrustBadge[];
@@ -133,7 +178,7 @@ export interface OwnerBusinessDetail {
   lat: number;
   lng: number;
   address: string | null;
-  workingHours: Record<string, { open: string; close: string; closed: boolean }>;
+  workingHours: WorkingHours;
   /** null = a service must finish by closing time (default). */
   lastBookingCutoffMinutes: number | null;
   city: { name: string };

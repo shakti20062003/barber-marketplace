@@ -42,6 +42,14 @@ export default function BusinessCard({ business }: { business: BusinessCardType 
           {!business.openNow && business.todayHours && (
             <p className="text-xs text-muted">Today {formatHhmm(business.todayHours.open)}–{formatHhmm(business.todayHours.close)}</p>
           )}
+          {business.achievements?.[0] && (
+            <p className="mt-1 truncate text-xs font-semibold text-amber-700">
+              {business.achievements[0].emoji} {business.achievements[0].label}
+              {business.achievements.length > 1 && (
+                <span className="font-normal text-muted"> +{business.achievements.length - 1} more</span>
+              )}
+            </p>
+          )}
           {business.trustBadges.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {business.trustBadges.slice(0, 2).map((badge) => {

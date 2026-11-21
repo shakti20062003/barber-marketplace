@@ -22,11 +22,53 @@ export const BLOCKING_STATUSES: BookingStatus[] = ['PENDING', 'CONFIRMED', 'IN_P
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
-type DayHours = { open: string; close: string; closed?: boolean };
+/** One day of `Business.workingHours` (JSON). `breaks` = e.g. lunch, not bookable. */
+type DayHours = {
+  open: string;
+  close: string;
+  closed?: boolean;
+  breaks?: { start: string; end: string }[];
+};
 
 export interface TimeWindow {
   start: Date;
   end: Date;
+  /** True when this window stops because a break (e.g. lunch) starts — a service must finish before it. */
+  endsAtBreak?: boolean;
+}
+
+function dayHours(workingHours: unknown, day: Date): DayHours | null {
+  if (!workingHours || typeof workingHours !== 'object') return null;
+  const hours = (workingHours as Record<string, DayHours | undefined>)[DAY_KEYS[day.getDay()]];
+  return hours && !hours.closed ? hours : null;
+}
+
+/** The salon's breaks (lunch etc.) on a given day, clipped to sensible values. */
+export function breaksFor(workingHours: unknown, day: Date): TimeWindow[] {
+  const hours = dayHours(workingHours, day);
+  if (!hours?.breaks?.length) return [];
+  return hours.breaks
+    .map((b) => ({ start: atTime(day, b.start), end: atTime(day, b.end) }))
+    .filter((b) => b.end > b.start)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+/** Splits a window around breaks. Pieces that stop because a break begins are flagged `endsAtBreak`. */
+export function subtractBreaks(w: TimeWindow, breaks: TimeWindow[]): TimeWindow[] {
+  let pieces: TimeWindow[] = [w];
+  for (const br of breaks) {
+    const next: TimeWindow[] = [];
+    for (const p of pieces) {
+      if (br.end <= p.start || br.start >= p.end) {
+        next.push(p);
+        continue;
+      }
+      if (br.start > p.start) next.push({ start: p.start, end: br.start, endsAtBreak: true });
+      if (br.end < p.end) next.push({ start: br.end, end: p.end, endsAtBreak: p.endsAtBreak });
+    }
+    pieces = next;
+  }
+  return pieces;
 }
 
 /** Local midnight for a "YYYY-MM-DD" string. */
@@ -67,17 +109,22 @@ export function businessWindowFor(workingHours: unknown, day: Date): TimeWindow 
   return end > start ? { start, end } : null;
 }
 
+/** Open right now — inside today's hours and not on a break. */
 export function isOpenAt(workingHours: unknown, at: Date = new Date()): boolean {
-  const window = businessWindowFor(workingHours, startOfLocalDay(at));
-  return !!window && at >= window.start && at < window.end;
+  const day = startOfLocalDay(at);
+  const window = businessWindowFor(workingHours, day);
+  if (!window || at < window.start || at >= window.end) return false;
+  return !breaksFor(workingHours, day).some((b) => at >= b.start && at < b.end);
 }
 
 /** Today's hours as "HH:mm" strings, for "Opens at 10:00" style copy. */
-export function todaysHours(workingHours: unknown, at: Date = new Date()): { open: string; close: string } | null {
-  if (!workingHours || typeof workingHours !== 'object') return null;
-  const hours = (workingHours as Record<string, DayHours | undefined>)[DAY_KEYS[at.getDay()]];
-  if (!hours || hours.closed) return null;
-  return { open: hours.open, close: hours.close };
+export function todaysHours(
+  workingHours: unknown,
+  at: Date = new Date(),
+): { open: string; close: string; breaks: { start: string; end: string }[] } | null {
+  const hours = dayHours(workingHours, at);
+  if (!hours) return null;
+  return { open: hours.open, close: hours.close, breaks: hours.breaks ?? [] };
 }
 
 function intersect(a: TimeWindow, b: TimeWindow): TimeWindow | null {
@@ -97,6 +144,7 @@ export function staffWindowsFor(
   business: TimeWindow | null,
   weekly: { startTime: string; endTime: string }[],
   override: { startTime: string | null; endTime: string | null; isClosed: boolean } | null,
+  breaks: TimeWindow[] = [],
 ): TimeWindow[] {
   if (!business) return [];
   if (override?.isClosed) return [];
@@ -104,10 +152,14 @@ export function staffWindowsFor(
     override?.startTime && override.endTime
       ? [{ startTime: override.startTime, endTime: override.endTime }]
       : weekly;
-  if (raw.length === 0) return [business];
-  return raw
-    .map((w) => intersect({ start: atTime(day, w.startTime), end: atTime(day, w.endTime) }, business))
-    .filter((w): w is TimeWindow => w !== null);
+  const clipped =
+    raw.length === 0
+      ? [business]
+      : raw
+          .map((w) => intersect({ start: atTime(day, w.startTime), end: atTime(day, w.endTime) }, business))
+          .filter((w): w is TimeWindow => w !== null);
+  // Salon breaks (lunch) apply to everyone.
+  return clipped.flatMap((w) => subtractBreaks(w, breaks));
 }
 
 /**
@@ -122,7 +174,9 @@ export function staffWindowsFor(
  */
 export function fitsWindow(start: Date, end: Date, w: TimeWindow, cutoffMinutes: number | null | undefined): boolean {
   if (start < w.start) return false;
-  if (cutoffMinutes == null) return end <= w.end;
+  // Before a break the service always has to be finished — the cut-off
+  // setting only relaxes closing time, never lunch.
+  if (cutoffMinutes == null || w.endsAtBreak) return end <= w.end;
   return start.getTime() <= w.end.getTime() - cutoffMinutes * 60_000;
 }
 

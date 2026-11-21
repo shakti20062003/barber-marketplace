@@ -194,6 +194,13 @@ actually resolves through the workspace symlink.
   - staff with no `StaffAvailability` rows (anyone added from the owner UI)
     default to the salon's full hours;
   - start times are offered every 15 min (`SLOT_STEP_MINUTES`);
+  - **breaks + editable hours** (2026-11-21): `workingHours[day].breaks`
+    (e.g. lunch) split the day via `breaksFor`/`subtractBreaks`; services must
+    finish before a break even with a cut-off. Owners edit hours in Manage →
+    Opening hours (any time up to 23:59). No per-stylist shift UI exists, so
+    stylists follow salon hours (seeded 09–20 shifts removed by migration
+    `remove_seeded_staff_shifts`). Show hours with `HoursList` (Mon→Sun):
+    JSONB doesn't keep key order;
   - **last booking time** (`fitsWindow`, `Business.lastBookingCutoffMinutes`,
     owner setting under Manage → "Last booking time"): `null` (default) means
     the whole service must finish by closing (9–7 salon, 60-min service → last
@@ -329,6 +336,19 @@ actually resolves through the workspace symlink.
   `MobileTabBar` bug that sent every logged-in user, including customers,
   to `/owner` regardless of role shipped once already).
 
+- **Style Finder** (`/styles`, `lib/faceShape.ts`, `modules/styles`, table
+  `hair_styles`): MediaPipe Face Landmarker is loaded **at runtime from the
+  CDN** (`import(/* webpackIgnore */ /* turbopackIgnore */ url)`), never
+  bundled or npm-installed (lockfile gotcha). The photo never leaves the
+  device. Seeded catalogue: 28 styles with per-face-shape scores, upserted
+  and never overwritten. Photos are admin-uploaded (Admin → Style Finder
+  catalogue); placeholders until then.
+- **Achievements** (`modules/businesses/achievements.ts`): computed per
+  request from reviews and completed visits, never stored. Earned ones go on
+  search cards and the salon page; the full list with progress is on the owner
+  dashboard. Home heading is "Featured salons in your area".
+- **Search radius**: `trimly_radius` cookie (default 7 km), resolved with
+  the location in `lib/location-server.ts`.
 - **Compare salons** (`/compare?a=&b=`, entry point `CompareSection` at the
   bottom of the home page): client-side, built from two
   `GET /businesses/:id` calls; ✓ marks the better value per row, and

@@ -643,3 +643,29 @@ model AuditLog {
   @@index([entityType, entityId])
   @@map("audit_logs")
 }
+
+enum StyleGender {
+  MEN
+  WOMEN
+}
+
+/// Style Finder catalogue. `faceShapeFit` holds a 0–100 suitability score per
+/// face shape: { oval, round, square, heart, oblong, diamond }. The customer's
+/// match % is the probability-weighted average over their face-shape estimate.
+model HairStyle {
+  id           String      @id @default(uuid())
+  name         String
+  gender       StyleGender
+  description  String
+  length       String // "Short" | "Medium" | "Long"
+  maintenance  String // "Low" | "Medium" | "High"
+  faceShapeFit Json
+  imageUrl     String? // admin-uploaded photo; null = illustrated placeholder
+  order        Int         @default(0)
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+
+  @@unique([name, gender])
+  @@index([gender, active])
+  @@map("hair_styles")
+}
