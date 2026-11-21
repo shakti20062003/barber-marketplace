@@ -4,10 +4,13 @@ services:
     runtime: node
     plan: free
     region: singapore
-    buildCommand: npm install && npm run prisma:generate && npm run migrate:deploy --workspace=database && npm run build:api
+    # Seed is idempotent (skips salons that already exist), so it's safe on every deploy.
+    buildCommand: npm install && npm run prisma:generate && npm run migrate:deploy --workspace=database && npm run seed --workspace=database && npm run build:api
     startCommand: node backend/dist/main.js
     healthCheckPath: /api/cities
     envVars:
+      # Intentionally development: SMS isn't wired up yet, so the OTP is
+      # returned in the API response (devOtp) for phone testing.
       - key: NODE_ENV
         value: development
       - key: PORT
@@ -17,13 +20,18 @@ services:
           name: trimly-db
           property: connectionString
       - key: REDIS_URL
-        sync: false
+        fromService:
+          type: keyvalue
+          name: trimly-redis
+          property: connectionString
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 7d
+      # Comma-separated list of allowed CORS origins. If Render gives the web
+      # service a different URL (name taken), update this in the dashboard.
       - key: WEB_APP_URL
-        value: http://localhost:3000
+        value: https://trimly-web.onrender.com,http://localhost:3000
       - key: SEARCH_WEIGHT_DISTANCE
         value: 0.4
       - key: SEARCH_WEIGHT_RATING
@@ -31,6 +39,26 @@ services:
       - key: SEARCH_WEIGHT_AVAILABILITY
         value: 0.2
 
+  - type: web
+    name: trimly-web
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install && npm run build:web
+    startCommand: npm run start --workspace=frontend
+    envVars:
+      # Baked in at build time. If Render gives the backend a different URL
+      # (name taken), update this in the dashboard and redeploy.
+      - key: NEXT_PUBLIC_API_URL
+        value: https://trimly-backend.onrender.com/api
+
+  - type: keyvalue
+    name: trimly-redis
+    plan: free
+    region: singapore
+    ipAllowList: []
+
 databases:
   - name: trimly-db
     plan: free
+    region: singapore

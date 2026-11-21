@@ -275,6 +275,19 @@ missing — search for `TODO` in `backend/src` to find them all:
   fields are reserved but unused), no loyalty/referral/wallet (V2/V3 per
   PRD).
 
+## Deployment (Render)
+
+`render.yaml` is a Render Blueprint that brings up everything: `trimly-backend`,
+`trimly-web`, `trimly-redis` (Key Value, free) and `trimly-db` (Postgres),
+all in `singapore`. The backend build runs migrations + the idempotent seed.
+Cross-service URLs are hardcoded as the expected `https://<name>.onrender.com`;
+if Render assigns a suffixed URL (name taken), fix `WEB_APP_URL` (backend,
+comma-separated CORS list) and `NEXT_PUBLIC_API_URL` (web, baked in at build
+time, so redeploy after changing it). `NODE_ENV=development` there on purpose
+so `devOtp` is returned until SMS delivery exists; switch to `production`
+once MSG91/Gupshup is wired up. Free-tier services sleep when idle, so the
+first request can take ~1 min.
+
 ## Local dev
 
 See `README.md` for the actual commands (Docker Compose up, env file

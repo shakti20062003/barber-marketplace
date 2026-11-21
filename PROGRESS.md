@@ -338,3 +338,19 @@ external credentials/infra this session didn't have.
   migrate → seed → run both dev servers → click through the golden path
   (search → salon profile → book → OTP complete) in a browser.
 - `git add` + first commit (not yet done — awaiting user confirmation).
+
+## 2026-11-21 — Full Render deploy for v1 phone testing
+
+Goal: get the first release onto a public URL so the founder can use it on
+a phone, then click through the full flow in a browser to find bugs.
+
+- `render.yaml` now provisions everything in one Blueprint: `trimly-backend`
+  (NestJS), `trimly-web` (Next.js, new), `trimly-redis` (Render Key Value,
+  free plan, new — replaces the earlier "bring your own Upstash" note), and
+  `trimly-db` (Postgres). The backend build now also runs the idempotent
+  seed, so the deployed DB has the 12 demo salons + the seeded admin.
+- `backend/src/main.ts`: `WEB_APP_URL` is now a comma-separated list of CORS
+  origins (deployed web URL + localhost).
+- The deploy is still `NODE_ENV=development` on purpose, so the OTP comes
+  back as `devOtp` in the API response (no SMS provider yet).
+- Production builds of both apps checked locally before pushing.
