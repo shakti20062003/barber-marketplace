@@ -215,7 +215,7 @@ export interface MyBooking {
   slotEnd: string;
   status: BookingStatus;
   business: { id: string; name: string; image: string | null; lat: number; lng: number; address: string | null };
-  service: { name: string; price: number; durationMinutes: number };
+  service: { id: string; name: string; price: number; durationMinutes: number };
   addOns: { id: string; name: string; price: number; durationMinutes: number }[];
   totalAmount: number;
   staff: { name: string } | null;

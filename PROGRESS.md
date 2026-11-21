@@ -584,3 +584,34 @@ service may run past closing.
   because at 85/75 an oval face got 13 of 14 "Great". Verified in the
   browser: men 5 Great / 8 Good / 1 May not suit; women 7 / 7; zero "%" on
   the page.
+
+## 2026-11-21 — Founder batch 4 (in progress)
+
+1. Style Finder: ask once "Men / Women / Both", remember it, tabs renamed
+   to "Men's styles / Women's styles / All" (styles stay open to everyone).
+2. Owner gets a notification when a booking comes in: web push + upcoming
+   bookings list on the dashboard.
+3. Customer can change the slot (reschedule) and sees how crowded each time is
+   (Free / Busy / Crowded / Full, based on booked vs. available stylists).
+Later (discussion first): home-service bookings.
+
+### Done (founder batch 4, 2026-11-21)
+
+1. Style Finder asks once "Men / Women / Both" (remembered), tabs "Men's
+   styles / Women's styles / All". Verified in the browser.
+2. Owner notifications: free Web Push built on Node crypto only (no new npm
+   deps), auto-generated VAPID keys in `app_settings`, `push_subscriptions`
+   table (migration `push_notifications`), service worker, manifest + generated
+   icons, dashboard "Turn on alerts / Send a test" card (iPhone guidance),
+   alerts on new booking / time change / cancellation / added services, plus
+   an "Upcoming (next 7 days)" list and NEW badges. Verified: RFC 8291 test
+   vector byte-exact; a 15-check end-to-end run with a local fake push service
+   decrypting the real payloads. Not yet verified on a real phone: the founder
+   should tap "Turn on alerts" then "Send a test".
+3. Change time: shared `SlotPicker` (booking + reschedule) with
+   Free/Busy/Crowded/Full and "X of Y free"; reschedule now refused once the
+   booking has started; friendlier "slot taken" message. Verified in the
+   browser (2-stylist salon: 11:00 Full, 12:00 Busy "1 of 2 free"; moved a
+   booking to 3:00 PM via the UI). Fixed the period summary saying "Mostly
+   busy" for a mostly-free morning.
+- Home service: deferred for discussion (founder's request).

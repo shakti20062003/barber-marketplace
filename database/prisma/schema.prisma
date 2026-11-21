@@ -141,6 +141,7 @@ model User {
   bookingsAsCustomer Booking[]       @relation("BookingCustomer")
   reviews         Review[]
   notifications   NotificationLog[]
+  pushSubscriptions PushSubscription[]
   auditLogs       AuditLog[]         @relation("AuditActor")
   referralsMade   Referral[]         @relation("Referrer")
   referralsReceived Referral[]       @relation("Referred")
@@ -668,4 +669,30 @@ model HairStyle {
   @@unique([name, gender])
   @@index([gender, active])
   @@map("hair_styles")
+}
+
+/// A browser/device that asked to receive web-push notifications (e.g. a
+/// salon owner's phone, for new-booking alerts). One user can have several.
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+/// Small key/value store for server-generated settings (e.g. the VAPID key
+/// pair for web push, generated once on first use).
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
 }

@@ -12,6 +12,7 @@ import { SlotLockService } from '../../common/redis/slot-lock.service.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import { generateBookingOtp, hashBookingOtp } from './otp.util.js';
 import { CallBridgeService } from './call-bridge.service.js';
+import { PushService } from '../../common/push/push.service.js';
 import {
   BLOCKING_STATUSES,
   breaksFor,
@@ -58,7 +59,47 @@ export class BookingsService {
     private readonly prisma: PrismaService,
     private readonly slotLock: SlotLockService,
     private readonly callBridge: CallBridgeService,
+    private readonly push: PushService,
   ) {}
+
+  /** "Mon 24 Nov, 5:30 pm" in salon time. */
+  private when(d: Date): string {
+    return d.toLocaleString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata',
+    });
+  }
+
+  /**
+   * Push alert to the salon owner about one of their bookings. Fire-and-
+   * forget — a notification problem must never fail the booking itself.
+   */
+  private async alertOwner(bookingId: string, title: string, detail?: string) {
+    try {
+      const b = await this.prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+          business: { select: { ownerUserId: true } },
+          customer: { select: { name: true } },
+          service: { select: { name: true } },
+        },
+      });
+      if (!b) return;
+      this.push.notifyUser(b.business.ownerUserId, {
+        title,
+        body: `${b.customer.name} · ${b.service.name} · ${this.when(b.slotStart)}${detail ? ` · ${detail}` : ''}`,
+        url: '/owner',
+        tag: `booking-${b.id}`,
+      });
+    } catch {
+      /* never block the booking flow */
+    }
+  }
 
   private policyFor(business: { cancellationPolicy: unknown }): CancellationPolicy {
     const raw = business.cancellationPolicy as Partial<CancellationPolicy> | null;
@@ -210,6 +251,8 @@ export class BookingsService {
         await this.slotLock.release(dto.businessId, lockKeyStaffId, slotStart.toISOString(), lockToken);
       }
 
+      void this.alertOwner(booking.id, '🎉 New booking');
+
       // TODO: enqueue confirmation notification to customer + business
       // (FR-4.1 AC: within 5s) once the job queue (BullMQ) is wired up.
       // TODO: for PAY_NOW, create the actual Razorpay order here.
@@ -246,7 +289,7 @@ export class BookingsService {
             media: { take: 1, orderBy: { order: 'asc' } },
           },
         },
-        service: { select: { name: true, price: true, durationMinutes: true } },
+        service: { select: { id: true, name: true, price: true, durationMinutes: true } },
         staff: { select: { name: true } },
         review: { select: { id: true, rating: true, text: true } },
         payment: { select: { amount: true } },
@@ -267,7 +310,7 @@ export class BookingsService {
         lng: b.business.lng,
         address: b.business.address,
       },
-      service: { name: b.service.name, price: b.service.price, durationMinutes: b.service.durationMinutes },
+      service: { id: b.service.id, name: b.service.name, price: b.service.price, durationMinutes: b.service.durationMinutes },
       addOns: b.addOns.map((a) => ({
         id: a.id,
         name: a.service.name,
@@ -336,6 +379,17 @@ export class BookingsService {
         : []),
     ]);
 
+    if (isCustomer) {
+      void this.alertOwner(bookingId, '❌ Booking cancelled', dto.reason ? `“${dto.reason}”` : undefined);
+    } else {
+      this.push.notifyUser(booking.customerId, {
+        title: '❌ Your booking was cancelled by the salon',
+        body: `${booking.business.name} · ${booking.service.name} · ${this.when(booking.slotStart)}`,
+        url: '/account',
+        tag: `booking-${bookingId}`,
+      });
+    }
+
     // TODO: dispatch cancellation notification (+ apology/priority-rebooking
     // suggestion when salon-initiated) via the job queue.
     await this.notifyWaitlistForFreedSlot(booking.businessId, booking.serviceId, booking.staffId, booking.slotStart);
@@ -383,6 +437,9 @@ export class BookingsService {
     if (!['PENDING', 'CONFIRMED'].includes(booking.status)) {
       throw new BadRequestException(`Cannot reschedule a booking in status ${booking.status}`);
     }
+    if (booking.slotStart <= new Date()) {
+      throw new BadRequestException('This booking has already started, so its time can no longer be changed.');
+    }
 
     const newSlotStart = new Date(dto.slotStart);
     if (newSlotStart <= new Date()) throw new BadRequestException('slotStart must be in the future');
@@ -395,7 +452,7 @@ export class BookingsService {
     try {
       if (newStaffId) {
         const available = await this.staffAvailableForSlot(newStaffId, newSlotStart, newSlotEnd, bookingId);
-        if (!available) throw new ConflictException('That staff member is not available for the new slot');
+        if (!available) throw new ConflictException('That time is no longer free — please pick another slot.');
       }
 
       // Atomic: the old slot is released and the new one held in the same
@@ -418,6 +475,7 @@ export class BookingsService {
       });
 
       await this.slotLock.release(booking.businessId, newStaffId ?? 'any', newSlotStart.toISOString(), lockToken);
+      void this.alertOwner(bookingId, '🕐 Booking time changed', `was ${this.when(booking.slotStart)}`);
       return updated;
     } catch (err) {
       await this.slotLock.release(booking.businessId, newStaffId ?? 'any', newSlotStart.toISOString(), lockToken);
@@ -524,6 +582,7 @@ export class BookingsService {
       }),
     ]);
 
+    void this.alertOwner(bookingId, '➕ Services added', `+${services.map((s) => s.name).join(', ')}`);
     return { slotEnd: newSlotEnd, extraMinutes, extraAmount };
   }
 

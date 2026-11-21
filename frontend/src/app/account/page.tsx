@@ -7,6 +7,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { clearSession, getStoredUser, getToken, saveSession } from '@/lib/auth-client';
 import type { BusinessDetail, CurrentUser, MyBooking, Service } from '@/lib/types';
 import AvatarPicker from '@/components/AvatarPicker';
+import RescheduleBooking from '@/components/RescheduleBooking';
 import CallButton from '@/components/CallButton';
 import { directionsUrl, formatTime } from '@/lib/image';
 
@@ -186,6 +187,8 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
   const [reviewing, setReviewing] = useState(false);
   const [justReviewed, setJustReviewed] = useState(false);
   const [addingServices, setAddingServices] = useState(false);
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduled, setRescheduled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isUpcoming = UPCOMING_STATUSES.has(booking.status);
   const canCancel = booking.status === 'PENDING' || booking.status === 'CONFIRMED';
@@ -294,7 +297,40 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
             </Link>
           </div>
 
+          {rescheduled && (
+            <p role="status" className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+              ✓ Time changed. The salon will see your new time.
+            </p>
+          )}
+
           {canAddServices && (
+            <div className="mt-3">
+              {rescheduling ? (
+                <RescheduleBooking
+                  booking={booking}
+                  onCancel={() => setRescheduling(false)}
+                  onDone={() => {
+                    setRescheduling(false);
+                    setRescheduled(true);
+                    onChange();
+                  }}
+                />
+              ) : (
+                <button
+                  onClick={() => {
+                    setRescheduling(true);
+                    setAddingServices(false);
+                    setRescheduled(false);
+                  }}
+                  className="w-full rounded-xl border border-border py-2.5 text-sm font-semibold"
+                >
+                  🕐 Change time
+                </button>
+              )}
+            </div>
+          )}
+
+          {canAddServices && !rescheduling && (
             <div className="mt-3">
               {addingServices ? (
                 <>

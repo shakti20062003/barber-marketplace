@@ -8,6 +8,7 @@ import { clearSession, getToken, getStoredUser } from '@/lib/auth-client';
 import type { Achievement, CurrentUser } from '@/lib/types';
 import AvatarPicker from '@/components/AvatarPicker';
 import CallButton from '@/components/CallButton';
+import BookingAlerts from '@/components/BookingAlerts';
 import { formatTime } from '@/lib/image';
 
 interface OwnerBusiness {
@@ -31,10 +32,23 @@ interface DashboardBooking {
   staff: { name: string } | null;
   addOns: { id: string; service: { name: string } }[];
   lateNoShowCandidate: boolean;
+  isNew: boolean;
+}
+
+interface UpcomingBooking {
+  id: string;
+  slotStart: string;
+  slotEnd: string;
+  status: string;
+  isNew: boolean;
+  service: { name: string };
+  customer: { name: string };
+  staff: { name: string } | null;
 }
 
 interface Dashboard {
   todaysBookings: DashboardBooking[];
+  upcomingBookings: UpcomingBooking[];
   cancellationsToday: number;
   revenueToday: number;
   achievements: Achievement[];
@@ -126,6 +140,9 @@ function BookingRow({ booking, onChange }: { booking: DashboardBooking; onChange
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-semibold">
+            {booking.isNew && (
+              <span className="mr-1.5 rounded bg-brand px-1.5 py-0.5 align-middle text-[10px] font-bold text-brand-foreground">NEW</span>
+            )}
             {formatTime(booking.slotStart)} – {formatTime(booking.slotEnd)} · {booking.customer.name}
           </p>
           <p className="text-muted">
@@ -408,6 +425,8 @@ export default function OwnerPage() {
         Manage photos, services, staff &amp; location →
       </Link>
 
+      <BookingAlerts />
+
       <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
         <div className="rounded-xl border border-border bg-surface p-3 sm:p-4">
           <p className="text-sm text-muted">Revenue today</p>
@@ -430,6 +449,31 @@ export default function OwnerPage() {
         ))}
         {(!dashboard || dashboard.todaysBookings.length === 0) && (
           <p className="p-3 text-sm text-muted">No bookings today yet.</p>
+        )}
+      </div>
+
+      <h2 className="mt-6 mb-2 text-lg font-semibold">Upcoming (next 7 days)</h2>
+      <div className="divide-y divide-border rounded-xl border border-border bg-surface">
+        {dashboard?.upcomingBookings.map((b) => (
+          <div key={b.id} className="flex items-start justify-between gap-2 p-3 text-sm">
+            <div className="min-w-0">
+              <p className="font-semibold">
+                {b.isNew && (
+                  <span className="mr-1.5 rounded bg-brand px-1.5 py-0.5 align-middle text-[10px] font-bold text-brand-foreground">NEW</span>
+                )}
+                {new Date(b.slotStart).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })} ·{' '}
+                {formatTime(b.slotStart)}
+              </p>
+              <p className="truncate text-muted">
+                {b.customer.name} · {b.service.name}
+                {b.staff && <> · {b.staff.name}</>}
+              </p>
+            </div>
+            <CallButton bookingId={b.id} label="Call customer" compact />
+          </div>
+        ))}
+        {(!dashboard || dashboard.upcomingBookings.length === 0) && (
+          <p className="p-3 text-sm text-muted">No upcoming bookings in the next 7 days yet.</p>
         )}
       </div>
 

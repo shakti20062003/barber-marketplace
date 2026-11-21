@@ -17,6 +17,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Trimly — Book barbers & salons",
   description: "Guaranteed slots at verified barbers, salons and beauty parlours near you.",
+  // Home Screen icon + standalone mode on iPhone (needed there for web push).
+  icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Trimly", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

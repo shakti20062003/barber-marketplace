@@ -32,6 +32,9 @@ export const envSchema = z.object({
   EXOTEL_CALLER_ID: z.string().optional(),
   EXOTEL_SUBDOMAIN: z.string().optional(),
 
+  // Web push contact (mailto: or https URL) sent to push services; keys are auto-generated.
+  VAPID_SUBJECT: z.string().optional(),
+
   // FR-2.1 AC: default sort weighting must be configurable, not hardcoded.
   SEARCH_WEIGHT_DISTANCE: z.coerce.number().default(0.4),
   SEARCH_WEIGHT_RATING: z.coerce.number().default(0.4),

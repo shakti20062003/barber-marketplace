@@ -293,11 +293,14 @@ disagree. If you change a rule, change it here and add a test in
   owner dashboard flags the booking (`lateNoShowCandidate`) and offers
   *Mark no-show* or *Cancel*.
   ⚠️ So owners must tap **"Customer arrived"** when someone walks in.
-- **Busy colours.** `GET /businesses/:id/availability` returns a `grid`:
-  for each start time, `available` / `total` stylists and the free
-  `staffIds`. The booking page colours each time green (more than half the
-  stylists free), amber (half or fewer) or grey (full), and shows a trend per
-  Morning / Afternoon / Evening.
+- **Crowd levels** (`components/SlotPicker.tsx`, shared by booking and
+  rescheduling). `GET /businesses/:id/availability` returns a `grid`: for
+  each start time, `available` / `total` stylists and the free `staffIds`.
+  Each time is coloured by the share of stylists already booked: **Free**
+  (none), **Busy** (< 60%), **Crowded** (≥ 60%, someone still free), **Full**
+  (no one free, disabled). With more than one stylist it shows "X of Y free".
+  Morning / Afternoon / Evening get a summary (Mostly free < 20% booked,
+  Getting busy < 60%, Mostly crowded, Fully booked).
 
 ### 7.2 Booking lifecycle — `backend/src/modules/bookings/bookings.service.ts`
 
@@ -328,6 +331,10 @@ disagree. If you change a rule, change it here and add a test in
   cancelling refunds according to the salon's cancellation policy (default:
   free up to 2 hours before). Cancelling also notifies the first waitlisted
   customer, at the database level only (no messages are sent yet).
+- **Change time (reschedule):** customer → "🕐 Change time" in booking
+  details (`RescheduleBooking` + `SlotPicker`, current time hidden).
+  `POST /bookings/:id/reschedule` keeps the booking's full length (incl.
+  add-ons), refuses once the booking has started, and alerts the owner.
 - **Add services:** `POST /bookings/:id/add-services`, by the customer,
   before the start time. Creates `BookingAddOn` rows, extends `slotEnd`
   (only if the same stylist is still free) and raises the unpaid amount.
@@ -339,6 +346,39 @@ disagree. If you change a rule, change it here and add a test in
   side, showing the platform's number both ways. No real number is ever
   shown. Customer phone numbers are deliberately **not** included in the
   owner dashboard payload.
+
+### 7.2b Notifications (web push) — `backend/src/common/push`
+
+Owners get a phone notification for **new bookings, time changes,
+cancellations and added services** (customers get one when the salon cancels).
+It's free, standard **Web Push**, implemented with **Node's built-in crypto
+only** (`web-push.ts`; no npm package, see the lockfile gotcha):
+VAPID (RFC 8292) + aes128gcm payload encryption (RFC 8291). It's unit-tested
+against the RFC 8291 worked example (byte-exact) and was end-to-end tested
+with a local fake push service that decrypts what we send.
+
+- **Keys:** the VAPID key pair is generated on first use and stored in
+  `app_settings` (`vapid_keys`); no env setup. Optional `VAPID_SUBJECT`
+  (contact URL) env var. Don't delete that row: it would invalidate every
+  existing subscription.
+- **Devices:** `push_subscriptions` (endpoint, p256dh, auth, userId). Dead
+  endpoints (404/410) are deleted automatically. Every send is logged in
+  `notifications_log`.
+- **API:** `GET /push/public-key` (public), `POST /push/subscribe`,
+  `/push/unsubscribe`, `/push/status`, `/push/test` (sends "alerts are on").
+- **Frontend:** `public/sw.js` (service worker: shows the notification,
+  opens `/owner` on tap), `lib/push.ts`, `components/BookingAlerts.tsx` (owner
+  dashboard card: Turn on alerts / Send a test / Turn off, plus help for
+  blocked permission and iPhone). `app/manifest.ts` + icons in `public/`
+  make the app installable.
+- **iPhone:** Apple only allows web push for sites **added to the Home
+  Screen** (iOS 16.4+). The card explains this. Android Chrome works directly.
+- **Sending from code:** inject `PushService` (global) and call
+  `notifyUser(userId, { title, body, url, tag })`. It's fire-and-forget and
+  never throws, so a push problem can't break a booking. `BookingsService.alertOwner()`
+  is the booking helper.
+- The owner dashboard also lists **Upcoming (next 7 days)**, and bookings
+  made in the last 2 hours get a **NEW** badge (`isNew`).
 
 ### 7.3 Search and ranking — `businesses.service.ts`
 
@@ -468,11 +508,11 @@ suits their face.
 | `/search` | everyone | Full search |
 | `/salons/[id]` | everyone | Salon profile (server-rendered for SEO): open status, services with photos, stylists, hours, map + directions, reviews |
 | `/salons/[id]/book` | customer | Service → date chips (closed days marked) → colour-coded times → confirm. Confirmation shows the code and the "reach on time" notice |
-| `/styles` | everyone | **Style Finder**: selfie/upload → face shape → "Does it suit me?" per cut (Great / Good / May not suit, never a %), "Check all", best matches first, Women's/Men's toggle |
+| `/styles` | everyone | **Style Finder**: first visit asks "Men / Women / Both" (remembered on the device, `trimly_style_view`); tabs "Men's styles · Women's styles · All" (every style is open to everyone); selfie/upload → face shape → "Does it suit me?" per cut (Great / Good / May not suit, never a %), "Check all", best matches first |
 | `/compare?a=&b=` | everyone | Side-by-side comparison; ✓ marks the better value; same-name services priced side by side |
 | `/login` | everyone | Phone + OTP; redirects by role (or to `?next=`) |
 | `/account` | customer | Profile + photo, Upcoming / Past bookings. Tap a booking for details: code, add services, call salon, directions, cancel, review |
-| `/owner` | owner | First-time salon setup, or the dashboard: today's bookings with Arrived / Complete (code) / No-show / Cancel / Call, refreshed every minute |
+| `/owner` | owner | First-time salon setup, or the dashboard: **booking alerts card**, today's bookings with Arrived / Complete (code) / No-show / Cancel / Call (refreshed every minute, NEW badges), **Upcoming (next 7 days)**, achievements |
 | `/owner/manage` | owner | Photos (upload from phone), location, **opening hours + breaks**, last booking time, services (+ photos), staff |
 | `/admin` | admin | Clickable stat tiles → searchable lists: salons by status (verify / reject / unlist), customers, owners, bookings; **Style Finder catalogue** (upload style photos, add/hide styles) |
 
@@ -521,7 +561,7 @@ Frontend conventions:
 | `POST /bookings` | customer | Create `{businessId, serviceId, staffId?, slotStart, paymentMethod:'PAY_AT_SHOP'}` → returns `otp` |
 | `GET /bookings/me` | customer | My bookings (with `confirmationCode`, `addOns`, `totalAmount`, `review {rating, text}` once reviewed) |
 | `POST /bookings/:id/add-services` | customer | `{serviceIds[]}` |
-| `POST /bookings/:id/reschedule` | customer | `{slotStart, staffId?}` |
+| `POST /bookings/:id/reschedule` | customer | `{slotStart, staffId?}` (before the start time only; alerts the owner) |
 | `POST /bookings/:id/cancel` | customer / owner | `{reason?}` |
 | `POST /bookings/:id/start` | owner | Check-in → `IN_PROGRESS` |
 | `POST /bookings/:id/complete` | owner / staff | `{otp}` (the customer's code) |
@@ -539,6 +579,8 @@ Frontend conventions:
 | `POST /admin/businesses/:id/verify` | admin | `{decision:'VERIFIED'\|'REJECTED', reason?}` |
 | `GET /admin/users?role=CUSTOMER\|OWNER` · `GET /admin/bookings` | admin | Lists (latest 200) |
 | `POST /admin/cities` · `POST /admin/categories` · `GET /admin/reviews/flagged` | admin | Catalog / moderation |
+| `GET /push/public-key` | 🔓 | VAPID public key for subscribing |
+| `POST /push/subscribe` · `/push/unsubscribe` · `/push/status` · `/push/test` | any | Web-push device management + test notification |
 | `POST /webhooks/razorpay` | 🔓 (signature-checked) | Payment webhook |
 | `GET /health` | 🔓 | Health check |
 
@@ -556,6 +598,8 @@ Frontend conventions:
 | `bookings` | `slotStart`, `slotEnd`, `status`, `otpHash`, `otpCode`, `staffId` | `slotEnd` includes add-ons |
 | `booking_add_ons` | `bookingId`, `serviceId`, `price`, `durationMinutes` | Price copied at the time it's added |
 | `payments` | `amount`, `status`, `provider` (`cash`/`razorpay`) | Amount grows with add-ons while unpaid |
+| `push_subscriptions` | `userId`, `endpoint` (unique), `p256dh`, `auth` | Devices receiving web push |
+| `app_settings` | `key`, `value` | Server settings, e.g. generated VAPID keys |
 | `hair_styles` | `name`, `gender`, `faceShapeFit` (JSON), `imageUrl`, `active` | Style Finder catalogue |
 | `reviews`, `business_media`, `business_trust_badges`, `waitlist_entries`, `audit_logs`, … | | |
 
@@ -571,7 +615,8 @@ by `prisma migrate deploy` during the backend build.
 | SMS OTP delivery | OTP returned in the API response (`devOtp`) | Integrate MSG91/Gupshup in `auth.service.ts`, then set `NODE_ENV=production` |
 | Online payment | Disabled end to end | Razorpay order creation in `bookings.service.ts`, then remove `assertPaymentMethodAvailable` and the disabled button |
 | Masked calling | Built; **never tested against live Exotel** | Exotel account + 4 env vars; test one real call |
-| Notifications (confirmations, reminders, waitlist) | Mostly TODO no-ops | Job queue (BullMQ, PRD §7.2) |
+| Notifications | Owner push alerts (book/change/cancel/add-on) live; customer gets "salon cancelled" | Customer reminders before visits, waitlist alerts, SMS fallback: needs a scheduler / job queue (BullMQ, PRD §7.2) |
+| Home-service bookings | Not started (founder wants to discuss first: privacy/safety, stylist-wise pricing, payments) | Schema fields exist (`serviceLocationType`, `HomeServiceArea`) |
 | Image storage | Inline data URLs in Postgres | Cloudinary/S3 |
 | Rate limiting | Only OTP routes | `@nestjs/throttler` doesn't support Nest 12 yet |
 | Google/email login, home-service bookings, loyalty/referrals/wallet | Not built | V2/V3 per PRD |
@@ -614,5 +659,6 @@ Search for `TODO` in `backend/src` to see every stubbed call site.
 | 2026-11-21 | Owner setting "accept bookings until X min before closing" |
 | 2026-11-21 | Fixed booking page rendering wider than the phone screen ("opens zoomed in") |
 | 2026-11-21 | Hours list in Mon→Sun order (no overflow); owner hours editor with late closing + breaks; search radius picker; "Featured salons in your area" + achievements; **Style Finder** |
+| 2026-11-21 | Style Finder: remembered Men/Women/All view; owner **push notifications** + upcoming list; customer **Change time**; Free/Busy/Crowded/Full crowd levels |
 | 2026-11-21 | "Near me" location is remembered (cookie) across Home/Search/tab switches |
 | 2026-11-21 | Owner Manage buttons no longer share one busy state; call-button feedback is a toast; review form closes with a confirmation and shows the submitted review |

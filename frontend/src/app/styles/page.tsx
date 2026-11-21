@@ -15,7 +15,21 @@ import {
 } from '@/lib/faceShape';
 import type { HairStyle } from '@/lib/types';
 
-type Gender = 'MEN' | 'WOMEN';
+type View = 'MEN' | 'WOMEN' | 'ALL';
+
+// Remembered per device so the Style Finder opens on the customer's own list.
+// Styles stay open to everyone — this is only the default view.
+const VIEW_KEY = 'trimly_style_view';
+const VIEW_LABEL: Record<View, string> = { MEN: "Men's styles", WOMEN: "Women's styles", ALL: 'All' };
+
+function readSavedView(): View | null {
+  try {
+    const v = localStorage.getItem(VIEW_KEY);
+    return v === 'MEN' || v === 'WOMEN' || v === 'ALL' ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Broad bands only — never a percentage. The underlying score comes from
@@ -99,7 +113,19 @@ function StyleCard({
 }
 
 export default function StyleFinderPage() {
-  const [gender, setGender] = useState<Gender>('WOMEN');
+  const [gender, setGenderState] = useState<View>('ALL');
+  // null until we've read the saved choice; 'ask' = first visit, show the chooser.
+  const [viewChosen, setViewChosen] = useState<'ask' | 'chosen' | null>(null);
+
+  function setGender(v: View) {
+    setGenderState(v);
+    setViewChosen('chosen');
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* private mode — just don't remember */
+    }
+  }
   const [styles, setStyles] = useState<HairStyle[] | null>(null);
   const [analysis, setAnalysis] = useState<FaceAnalysis | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -113,6 +139,18 @@ export default function StyleFinderPage() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const scanCardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const saved = readSavedView();
+    /* eslint-disable react-hooks/set-state-in-effect -- localStorage is browser-only */
+    if (saved) {
+      setGenderState(saved);
+      setViewChosen('chosen');
+    } else {
+      setViewChosen('ask');
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
 
   useEffect(() => {
     apiFetch<HairStyle[]>('/styles')
@@ -160,7 +198,7 @@ export default function StyleFinderPage() {
   }
 
   const visible = useMemo(() => {
-    const list = (styles ?? []).filter((s) => s.gender === gender);
+    const list = (styles ?? []).filter((s) => gender === 'ALL' || s.gender === gender);
     if (analysis && sortByMatch) {
       return [...list].sort((a, b) => matchPercent(b.faceShapeFit, analysis) - matchPercent(a.faceShapeFit, analysis));
     }
@@ -246,16 +284,44 @@ export default function StyleFinderPage() {
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={onPhoto} />
       </div>
 
+      {/* First visit: which styles to show by default (remembered). */}
+      {viewChosen === 'ask' && (
+        <div className="mt-5 rounded-2xl border border-brand/30 bg-brand-tint/50 p-4">
+          <p className="font-semibold">Which styles should we show you?</p>
+          <p className="text-xs text-muted">You can switch anytime — every style is open to everyone.</p>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {(
+              [
+                ['MEN', '👨', 'Men'],
+                ['WOMEN', '👩', 'Women'],
+                ['ALL', '✨', 'Both'],
+              ] as const
+            ).map(([v, emoji, label]) => (
+              <button
+                key={v}
+                onClick={() => setGender(v)}
+                className="flex flex-col items-center rounded-xl border border-border bg-surface py-3 text-sm font-semibold active:scale-[0.98]"
+              >
+                <span className="text-2xl" aria-hidden>
+                  {emoji}
+                </span>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Gender + sort */}
       <div className="sticky top-[52px] z-10 -mx-4 mt-5 flex items-center justify-between gap-2 border-b border-border bg-background px-4 py-2">
         <div className="flex min-w-0 gap-1 rounded-full border border-border bg-surface p-1">
-          {(['WOMEN', 'MEN'] as const).map((g) => (
+          {(['MEN', 'WOMEN', 'ALL'] as const).map((g) => (
             <button
               key={g}
               onClick={() => setGender(g)}
-              className={`rounded-full px-3 py-1.5 text-sm font-semibold ${gender === g ? 'bg-brand text-brand-foreground' : 'text-muted'}`}
+              className={`whitespace-nowrap rounded-full px-2.5 py-1.5 text-xs font-semibold sm:px-3 sm:text-sm ${gender === g ? 'bg-brand text-brand-foreground' : 'text-muted'}`}
             >
-              {g === 'WOMEN' ? "Women's" : "Men's"}
+              {VIEW_LABEL[g]}
             </button>
           ))}
         </div>
@@ -300,10 +366,10 @@ export default function StyleFinderPage() {
         <p className="font-semibold">Found a look you love?</p>
         <p className="mt-0.5 text-sm text-white/70">Show this style to your stylist when you book.</p>
         <Link
-          href={`/search?category=${gender === 'MEN' ? 'Men' : 'Women'}`}
+          href={gender === 'ALL' ? '/search' : `/search?category=${gender === 'MEN' ? 'Men' : 'Women'}`}
           className="mt-3 inline-block rounded-full bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground"
         >
-          Find a {gender === 'MEN' ? "men's" : "women's"} salon near me →
+          Find a {gender === 'MEN' ? "men's " : gender === 'WOMEN' ? "women's " : ''}salon near me →
         </Link>
       </div>
 

@@ -24,6 +24,9 @@ import {
   todaysHours,
 } from '../../common/scheduling/schedule.js';
 
+/** Bookings made this recently get a "NEW" badge on the owner dashboard. */
+const NEW_BOOKING_MS = 2 * 60 * 60 * 1000;
+
 @Injectable()
 export class BusinessesService {
   constructor(
@@ -390,7 +393,8 @@ export class BusinessesService {
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    const [todaysBookings, cancellationsToday, revenueAgg] = await Promise.all([
+    const weekEnd = new Date(todayEnd.getTime() + 7 * 86_400_000);
+    const [todaysBookings, cancellationsToday, revenueAgg, upcoming] = await Promise.all([
       this.prisma.booking.findMany({
         where: { businessId, slotStart: { gte: todayStart, lte: todayEnd } },
         // Customer phone deliberately omitted: calls go through the masked
@@ -413,6 +417,26 @@ export class BusinessesService {
         },
         _sum: { amount: true },
       }),
+      // After today, next 7 days — so owners see what's coming, not just today.
+      this.prisma.booking.findMany({
+        where: {
+          businessId,
+          slotStart: { gt: todayEnd, lte: weekEnd },
+          status: { in: ['PENDING', 'CONFIRMED'] },
+        },
+        select: {
+          id: true,
+          slotStart: true,
+          slotEnd: true,
+          status: true,
+          createdAt: true,
+          service: { select: { name: true } },
+          customer: { select: { name: true } },
+          staff: { select: { name: true } },
+        },
+        orderBy: { slotStart: 'asc' },
+        take: 50,
+      }),
     ]);
 
     const now = new Date();
@@ -420,7 +444,9 @@ export class BusinessesService {
       todaysBookings: todaysBookings.map(({ otpHash: _h, otpCode: _c, ...b }) => ({
         ...b,
         lateNoShowCandidate: isPastGrace(b, now),
+        isNew: now.getTime() - b.createdAt.getTime() < NEW_BOOKING_MS,
       })),
+      upcomingBookings: upcoming.map((b) => ({ ...b, isNew: now.getTime() - b.createdAt.getTime() < NEW_BOOKING_MS })),
       cancellationsToday,
       revenueToday: revenueAgg._sum.amount ?? 0,
       achievements,
