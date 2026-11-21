@@ -28,6 +28,56 @@ export class AdminService {
     });
   }
 
+  /** Any verification status — backs the clickable Pending/Verified/Rejected tiles. */
+  businessesByStatus(status: 'PENDING' | 'VERIFIED' | 'REJECTED') {
+    return this.prisma.business.findMany({
+      where: { verificationStatus: status },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        owner: { select: { name: true, phone: true, email: true } },
+        city: { select: { name: true } },
+        media: { orderBy: { order: 'asc' } },
+        services: true,
+        staff: true,
+        _count: { select: { bookings: true, reviews: true } },
+      },
+    });
+  }
+
+  users(role: 'CUSTOMER' | 'OWNER') {
+    return this.prisma.user.findMany({
+      where: { role },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        createdAt: true,
+        customerProfile: { select: { reliabilityScore: true, noShowCountRolling: true } },
+        businesses: { select: { id: true, name: true, verificationStatus: true } },
+        _count: { select: { bookingsAsCustomer: true } },
+      },
+    });
+  }
+
+  recentBookings() {
+    return this.prisma.booking.findMany({
+      orderBy: { slotStart: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        slotStart: true,
+        status: true,
+        business: { select: { id: true, name: true } },
+        customer: { select: { name: true } },
+        service: { select: { name: true } },
+        payment: { select: { amount: true, status: true } },
+      },
+    });
+  }
+
   async stats() {
     const [pendingCount, verifiedCount, rejectedCount, customerCount, ownerCount, bookingCount] =
       await Promise.all([
@@ -59,6 +109,9 @@ export class AdminService {
           metadata: { reason: dto.reason },
         },
       }),
+      // Exactly one VERIFIED badge while verified, none otherwise (re-verifying
+      // used to stack duplicates; unlisting used to leave the badge behind).
+      this.prisma.businessTrustBadge.deleteMany({ where: { businessId, badgeType: 'VERIFIED' } }),
       ...(dto.decision === 'VERIFIED'
         ? [
             this.prisma.businessTrustBadge.create({

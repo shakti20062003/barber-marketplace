@@ -5,11 +5,13 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import { BookingsService } from './bookings.service.js';
 import {
+  addServicesSchema,
   cancelBookingSchema,
   completeBookingSchema,
   createBookingSchema,
   markNoShowSchema,
   rescheduleBookingSchema,
+  type AddServicesDto,
   type CancelBookingDto,
   type CompleteBookingDto,
   type CreateBookingDto,
@@ -63,6 +65,28 @@ export class BookingsController {
     @Body(new ZodValidationPipe(completeBookingSchema)) dto: CompleteBookingDto,
   ) {
     return this.bookings.complete(id, user, dto);
+  }
+
+  @Post(':id/start')
+  @Roles('OWNER')
+  start(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.bookings.start(id, user);
+  }
+
+  @Post(':id/add-services')
+  @Roles('CUSTOMER')
+  addServices(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(addServicesSchema)) dto: AddServicesDto,
+  ) {
+    return this.bookings.addServices(id, user, dto);
+  }
+
+  @Post(':id/call')
+  @Roles('CUSTOMER', 'OWNER')
+  call(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.bookings.call(id, user);
   }
 
   @Patch(':id/no-show')

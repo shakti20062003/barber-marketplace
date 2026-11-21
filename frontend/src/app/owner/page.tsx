@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { clearSession, getToken, getStoredUser } from '@/lib/auth-client';
 import type { CurrentUser } from '@/lib/types';
+import AvatarPicker from '@/components/AvatarPicker';
+import CallButton from '@/components/CallButton';
+import { formatTime } from '@/lib/image';
 
 interface OwnerBusiness {
   id: string;
@@ -18,10 +21,145 @@ interface City {
   name: string;
 }
 
+interface DashboardBooking {
+  id: string;
+  slotStart: string;
+  slotEnd: string;
+  status: string;
+  service: { name: string };
+  customer: { name: string };
+  staff: { name: string } | null;
+  addOns: { id: string; service: { name: string } }[];
+  lateNoShowCandidate: boolean;
+}
+
 interface Dashboard {
-  todaysBookings: { id: string; slotStart: string; status: string; service: { name: string }; customer: { name: string } }[];
+  todaysBookings: DashboardBooking[];
   cancellationsToday: number;
   revenueToday: number;
+}
+
+const STATUS_PILL: Record<string, string> = {
+  CONFIRMED: 'bg-accent-tint text-accent',
+  IN_PROGRESS: 'bg-violet-50 text-violet-700',
+  COMPLETED: 'bg-emerald-50 text-emerald-700',
+  CANCELLED: 'bg-neutral-100 text-muted',
+  NO_SHOW: 'bg-red-50 text-red-700',
+  PENDING: 'bg-amber-50 text-amber-700',
+};
+
+function BookingRow({ booking, onChange }: { booking: DashboardBooking; onChange: () => void }) {
+  const [code, setCode] = useState('');
+  const [completing, setCompleting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function act(path: string, body: object = {}, method = 'POST') {
+    const token = getToken();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/bookings/${booking.id}/${path}`, { method, token, body: JSON.stringify(body) });
+      onChange();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Action failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const active = booking.status === 'CONFIRMED' || booking.status === 'IN_PROGRESS';
+
+  return (
+    <div className="p-3 text-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-semibold">
+            {formatTime(booking.slotStart)} – {formatTime(booking.slotEnd)} · {booking.customer.name}
+          </p>
+          <p className="text-muted">
+            {booking.service.name}
+            {booking.addOns.length > 0 && <> + {booking.addOns.map((a) => a.service.name).join(', ')}</>}
+            {booking.staff && <> · {booking.staff.name}</>}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {active && <CallButton bookingId={booking.id} label="Call customer" compact />}
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_PILL[booking.status] ?? 'bg-neutral-100 text-muted'}`}>
+            {booking.status.replace('_', ' ')}
+          </span>
+        </div>
+      </div>
+
+      {booking.lateNoShowCandidate && (
+        <div className="mt-2 rounded-lg bg-red-50 p-2.5 text-xs text-red-800">
+          Customer is more than 10 min late — this slot is now open for new bookings. Mark a no-show or cancel if they
+          don&apos;t turn up.
+        </div>
+      )}
+
+      {active && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {booking.status === 'CONFIRMED' && !booking.lateNoShowCandidate && (
+            <button
+              onClick={() => act('start')}
+              disabled={busy}
+              className="rounded-full bg-accent-tint px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-50"
+            >
+              Customer arrived
+            </button>
+          )}
+          {!completing && (
+            <button
+              onClick={() => setCompleting(true)}
+              className="rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground"
+            >
+              Complete
+            </button>
+          )}
+          {booking.lateNoShowCandidate && (
+            <>
+              <button
+                onClick={() => act('no-show', { reasonCode: 'LATE_OVER_10_MIN' }, 'PATCH')}
+                disabled={busy}
+                className="rounded-full border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50"
+              >
+                Mark no-show
+              </button>
+              <button
+                onClick={() => act('cancel', { reason: 'Customer did not arrive within 10 minutes' })}
+                disabled={busy}
+                className="rounded-full border border-border px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+              >
+                Cancel booking
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {completing && active && (
+        <div className="mt-2 flex gap-2">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            inputMode="numeric"
+            placeholder="Customer's 6-digit code"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 font-mono tracking-widest"
+          />
+          <button
+            onClick={() => act('complete', { otp: code })}
+            disabled={busy || code.length !== 6}
+            className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground disabled:opacity-50"
+          >
+            Done
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
 }
 
 const DEFAULT_HOURS = { open: '09:00', close: '19:00', closed: false };
@@ -44,6 +182,7 @@ export default function OwnerPage() {
   const [form, setForm] = useState({ name: '', category: 'Unisex', cityId: '', lat: '19.076', lng: '72.8777' });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = getStoredUser<CurrentUser>();
@@ -56,15 +195,26 @@ export default function OwnerPage() {
     setUser(stored);
     apiFetch<OwnerBusiness[]>('/owner/businesses', { token }).then(setBusinesses).catch(() => setBusinesses([]));
     apiFetch<City[]>('/cities').then(setCities).catch(() => setCities([]));
+    apiFetch<{ avatarUrl: string | null }>('/users/me', { token })
+      .then((me) => setAvatarUrl(me.avatarUrl))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
+  function loadDashboard() {
     const token = getToken();
     if (!token || !businesses?.[0]) return;
     apiFetch<Dashboard>(`/owner/businesses/${businesses[0].id}/dashboard`, { token })
       .then(setDashboard)
       .catch(() => setDashboard(null));
+  }
+
+  useEffect(() => {
+    loadDashboard();
+    // Refresh every minute so the "10 min late" state appears on its own.
+    const t = setInterval(loadDashboard, 60_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businesses]);
 
   async function createBusiness() {
@@ -131,6 +281,23 @@ export default function OwnerPage() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() =>
+              navigator.geolocation?.getCurrentPosition(
+                (pos) =>
+                  setForm((f) => ({ ...f, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) })),
+                () => setError('Could not get your location — you can set it later under Manage → Location.'),
+                { enableHighAccuracy: true, timeout: 15000 },
+              )
+            }
+            className="w-full rounded-xl bg-accent-tint py-2.5 text-sm font-semibold text-accent"
+          >
+            📍 Use my current location (stand inside the salon)
+          </button>
+          <p className="text-xs text-muted">
+            Location: {form.lat}, {form.lng} — you can fine-tune it later under Manage → Location.
+          </p>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             onClick={createBusiness}
@@ -148,7 +315,12 @@ export default function OwnerPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
       <div className="flex items-center justify-between text-sm text-muted">
-        <span>Signed in as {user.name}</span>
+        <div className="flex items-center gap-3">
+          <AvatarPicker name={user.name} avatarUrl={avatarUrl} onChange={setAvatarUrl} size={48} />
+          <span>
+            Signed in as <span className="font-medium text-foreground">{user.name}</span>
+          </span>
+        </div>
         <button
           onClick={() => {
             clearSession();
@@ -183,11 +355,11 @@ export default function OwnerPage() {
         href="/owner/manage"
         className="mt-3 block rounded-xl bg-brand-tint px-4 py-3 text-center text-sm font-semibold text-brand-dark"
       >
-        Manage services, staff &amp; photos →
+        Manage photos, services, staff &amp; location →
       </Link>
 
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="rounded-xl border border-border bg-surface p-3 sm:p-4">
           <p className="text-sm text-muted">Revenue today</p>
           <p className="text-2xl font-bold">₹{dashboard?.revenueToday ?? 0}</p>
         </div>
@@ -204,12 +376,7 @@ export default function OwnerPage() {
       <h2 className="mt-6 mb-2 text-lg font-semibold">Today&apos;s bookings</h2>
       <div className="divide-y divide-border rounded-xl border border-border bg-surface">
         {dashboard?.todaysBookings.map((b) => (
-          <div key={b.id} className="flex items-center justify-between p-3 text-sm">
-            <span>{new Date(b.slotStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            <span>{b.customer.name}</span>
-            <span>{b.service.name}</span>
-            <span className="text-muted">{b.status}</span>
-          </div>
+          <BookingRow key={b.id} booking={b} onChange={loadDashboard} />
         ))}
         {(!dashboard || dashboard.todaysBookings.length === 0) && (
           <p className="p-3 text-sm text-muted">No bookings today yet.</p>

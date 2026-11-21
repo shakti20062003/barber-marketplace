@@ -176,6 +176,31 @@ actually resolves through the workspace symlink.
   salon density/query complexity actually requires it). Ranking weights
   are env-configurable (`SEARCH_WEIGHT_DISTANCE/RATING/AVAILABILITY`), per
   an explicit PRD AC that they must not be hardcoded.
+- **Timezone + scheduling rules** (`common/scheduling/schedule.ts`, added
+  2026-11-21): salon working hours (`"09:00"`) are local wall-clock times,
+  so the API process must run in IST. `main.ts` sets `process.env.TZ ||=
+  'Asia/Kolkata'` and `render.yaml` pins `TZ` too. Render runs in UTC by
+  default, which shipped a real bug: slots started at 2:30 PM. All "is it
+  bookable / is it open" logic lives in this one module, shared by the
+  availability grid and booking creation so they can't disagree:
+  - staff windows are always clipped to the salon's hours for that day; a
+    salon closed that day has no slots (it used to stay bookable while
+    showing "Closed");
+  - staff with no `StaffAvailability` rows (anyone added from the owner UI)
+    default to the salon's full hours;
+  - start times are offered every 15 min (`SLOT_STEP_MINUTES`);
+  - **10-min late grace** (`LATE_GRACE_MINUTES`): a `CONFIRMED` booking not
+    checked in (`POST /bookings/:id/start` → `IN_PROGRESS`) within 10 min of
+    its start stops blocking the slot. The status is never changed
+    automatically (PRD §4.5); the owner dashboard flags it
+    (`lateNoShowCandidate`) and offers mark no-show or cancel. Owners must
+    tap "Customer arrived" or the slot gets re-offered.
+  - Postgres `@db.Date` columns (staff overrides, waitlist dates) must be
+    queried with `dbDateFor(localDay)`, not local midnight. Local midnight
+    in IST is the previous day in UTC.
+  `GET /businesses/:id/availability` returns `grid` (per start time:
+  `available`/`total` stylists + free `staffIds`) used for the booking
+  page's green/amber/full colour coding, plus `closed` and legacy `slots`.
 - **Booking state machine** (`modules/bookings/bookings.service.ts`)
   implements the full PRD §4 flow: create (with slot lock + reliability-based
   forced-prepayment), cancel (with §4.3 cancellation-policy refund calc +
@@ -187,7 +212,23 @@ actually resolves through the workspace symlink.
   `GET /bookings/me` (`findForCustomer`) lists the calling customer's own
   bookings, newest-first, with the business/service/staff fields and a
   `hasReview` flag the account page needs — added 2026-11-15, there was no
-  "my bookings" listing endpoint before that.
+  "my bookings" listing endpoint before that. Since 2026-11-21 it also returns
+  `confirmationCode` (from `Booking.otpCode`, stored alongside `otpHash`;
+  only ever returned to the booking's own customer, never in owner payloads),
+  `addOns` and `totalAmount`.
+  - **Add-on services**: `POST /bookings/:id/add-services` (customer, before
+    the start time) adds `BookingAddOn` rows, extends `slotEnd` (only if the
+    same stylist is still free) and increments the unpaid payment amount.
+  - **Masked calling**: `POST /bookings/:id/call` (customer or owner, active
+    bookings) goes through `CallBridgeService` (Exotel "connect two
+    numbers"; the ExoPhone is the caller ID both ways). Needs `EXOTEL_SID`,
+    `EXOTEL_API_KEY`, `EXOTEL_API_TOKEN` and `EXOTEL_CALLER_ID`; without
+    them it returns a friendly 503 rather than ever exposing a number. The
+    owner dashboard deliberately no longer includes customer phone numbers.
+  - **PAY_NOW is rejected** (`assertPaymentMethodAvailable`) and the UI
+    shows "Pay online — coming soon", because Razorpay order creation is
+    still a stub and a PAY_NOW booking would sit PENDING holding the slot.
+    Remove both once payments are live.
 - **Owner salon setup** (added 2026-11-15): `OwnerBusinessesController` now
   has `GET /owner/businesses/:id` (`BusinessesService.findForOwner`) —
   returns full business detail (services/staff/media) regardless of
@@ -195,9 +236,25 @@ actually resolves through the workspace symlink.
   not `VERIFIED`. Photos: `addMedia`/`removeMedia` on `BusinessesService` +
   `POST`/`DELETE /owner/businesses/:id/media[/:mediaId]`
   (`dto/media.dto.ts`). There's no file upload — owners paste an image URL
-  directly (consistent with the dummy-seed-data convention below of using
-  `picsum.photos` placeholders).
-- **Admin console**: `AdminService.stats()` (`GET /admin/stats`) gives
+  directly or upload from the device. **Uploads are stored inline as
+  `data:image/jpeg;base64,...` URLs** (resized client-side to ≤1280px by
+  `frontend/src/lib/image.ts`, validated by
+  `common/validation/image-url.ts`, max ~1.5 MB; the JSON body limit is
+  raised to 3 MB in `main.ts`). The same applies to `Service.imageUrl` and
+  `User.avatarUrl` (profile picture, `PATCH /users/me`). This is a stopgap
+  because no object storage is configured. Once Cloudinary/S3 exists,
+  upload there and store only the URL. `Business.address` + lat/lng are
+  editable from the owner's Manage → Location (geolocation or a pasted
+  Google Maps link). Customers see an OpenStreetMap embed and a Google Maps
+  directions link (no API key needed for either).
+  - Owner endpoints for a service/staff member now check it belongs to the
+    `:id` business. Previously an owner could edit another salon's
+    service/staff by ID.
+- **Admin console**: every stat tile on `/admin` is clickable and loads its
+  list: `GET /admin/businesses?status=PENDING|VERIFIED|REJECTED`,
+  `GET /admin/users?role=CUSTOMER|OWNER` and `GET /admin/bookings` (latest 200).
+  Verify/reject now keeps exactly one VERIFIED badge (it used to stack
+  duplicates). `AdminService.stats()` (`GET /admin/stats`) gives
   pending/verified/rejected business counts + customer/owner/booking
   counts. `pendingBusinesses()` is enriched with `services`/`staff`/`city`
   (not just `media`) so an admin reviewing a listing can see more than its
@@ -255,6 +312,14 @@ actually resolves through the workspace symlink.
   `MobileTabBar` bug that sent every logged-in user, including customers,
   to `/owner` regardless of role shipped once already).
 
+- **Compare salons** (`/compare?a=&b=`, entry point `CompareSection` at the
+  bottom of the home page): client-side, built from two
+  `GET /businesses/:id` calls; ✓ marks the better value per row, and
+  services with the same name at both salons are priced side by side.
+- Times shown to users go through `formatTime()` in `lib/image.ts`, which
+  pins `Asia/Kolkata`. The booking page's default date uses `localDateIso()`,
+  not `toISOString()`, which gave yesterday's date before 5:30 AM IST.
+
 ## Known gaps / stubbed integrations
 
 These are TODO-commented at their exact call site in the code, not silently
@@ -263,6 +328,12 @@ missing — search for `TODO` in `backend/src` to find them all:
 - Razorpay: webhook signature verification is real
   (`modules/payments/payments.service.ts`); actual order-creation API call
   is a placeholder (no credentials configured).
+- Online payment is switched off end to end (UI and API) until Razorpay is
+  live; see "PAY_NOW is rejected" above.
+- Masked calling needs an Exotel account (env vars above). The code is
+  built but not exercised against a live Exotel account.
+- Photo uploads are stored inline in Postgres as data URLs, not in object
+  storage (see "Owner salon setup").
 - SMS/WhatsApp OTP delivery: logged to console in development
   (`modules/auth/auth.service.ts`), no MSG91/Gupshup integration yet.
 - Job queue (BullMQ, per PRD §7.2) is not set up at all — notification

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import type { BusinessDetail } from '@/lib/types';
+import { directionsUrl, formatHhmm } from '@/lib/image';
 
 const DAY_LABELS: Record<string, string> = {
   mon: 'Monday',
@@ -75,6 +76,13 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
             <p className="text-muted">
               {business.category} · {business.city.name}
             </p>
+            <p className={`mt-0.5 text-sm font-medium ${business.openNow ? 'text-emerald-700' : 'text-muted'}`}>
+              {business.openNow
+                ? `● Open now · until ${formatHhmm(business.todayHours!.close)}`
+                : business.todayHours
+                  ? `Closed now · today ${formatHhmm(business.todayHours.open)}–${formatHhmm(business.todayHours.close)}`
+                  : 'Closed today'}
+            </p>
             <div className="mt-1.5 flex flex-wrap gap-1">
               {business.trustBadges.map((b) => (
                 <span key={b.badgeType} className="rounded bg-brand-tint px-1.5 py-0.5 text-[11px] font-medium text-brand-dark">
@@ -89,7 +97,7 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
             </div>
           </div>
           <a
-            href={`https://www.google.com/maps/dir/?api=1&destination=${business.lat},${business.lng}`}
+            href={directionsUrl(business.lat, business.lng)}
             target="_blank"
             rel="noreferrer"
             className="shrink-0 rounded-full border border-border px-3 py-2 text-sm font-medium hover:bg-brand-tint"
@@ -104,8 +112,12 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
           <h2 className="mb-2 text-lg font-semibold">Services</h2>
           <div className="divide-y divide-border rounded-xl border border-border bg-surface">
             {business.services.map((s) => (
-              <div key={s.id} className="flex items-center justify-between p-3">
-                <div className="min-w-0">
+              <div key={s.id} className="flex items-center justify-between gap-3 p-3">
+                {s.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={s.imageUrl} alt={s.name} className="h-14 w-14 shrink-0 rounded-lg object-cover" />
+                )}
+                <div className="min-w-0 flex-1">
                   <p className="font-medium">{s.name}</p>
                   <p className="text-sm text-muted">{s.durationMinutes} min</p>
                 </div>
@@ -158,6 +170,29 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
                   <span className="font-medium">{hours.closed ? 'Closed' : `${hours.open}–${hours.close}`}</span>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <h2 className="mb-2 text-lg font-semibold">Location</h2>
+          <div className="overflow-hidden rounded-xl border border-border bg-surface">
+            <iframe
+              title={`Map showing ${business.name}`}
+              src={`https://www.openstreetmap.org/export/embed.html?bbox=${business.lng - 0.006}%2C${business.lat - 0.004}%2C${business.lng + 0.006}%2C${business.lat + 0.004}&layer=mapnik&marker=${business.lat}%2C${business.lng}`}
+              className="h-52 w-full border-0"
+              loading="lazy"
+            />
+            <div className="flex items-center justify-between gap-3 p-3">
+              <p className="min-w-0 text-sm text-muted">{business.address ?? `${business.city.name}`}</p>
+              <a
+                href={directionsUrl(business.lat, business.lng)}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 rounded-full bg-brand px-3.5 py-1.5 text-sm font-semibold text-brand-foreground"
+              >
+                Get directions
+              </a>
             </div>
           </div>
         </section>

@@ -23,6 +23,7 @@ export const createBusinessSchema = z.object({
   description: z.string().max(2000).optional(),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
+  address: z.string().max(500).nullable().optional(),
   cityId: z.string().uuid(),
   workingHours: workingHoursSchema,
 });

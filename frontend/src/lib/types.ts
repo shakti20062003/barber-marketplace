@@ -8,6 +8,7 @@ export interface BusinessCard {
   distanceKm: number;
   startingPrice: number | null;
   openNow: boolean;
+  todayHours: { open: string; close: string } | null;
   trustBadges: string[];
 }
 
@@ -25,6 +26,7 @@ export interface Service {
   price: number;
   durationMinutes: number;
   description: string | null;
+  imageUrl: string | null;
   active: boolean;
 }
 
@@ -67,6 +69,9 @@ export interface BusinessDetail {
   description: string | null;
   lat: number;
   lng: number;
+  address: string | null;
+  openNow: boolean;
+  todayHours: { open: string; close: string } | null;
   workingHours: Record<string, { open: string; close: string; closed: boolean }>;
   city: { name: string; state: string | null };
   media: { id: string; url: string; type: string }[];
@@ -82,9 +87,22 @@ export interface AvailabilitySlot {
   end: string;
 }
 
+export interface AvailabilityGridEntry {
+  start: string;
+  end: string;
+  /** Stylists free for this start time. */
+  available: number;
+  /** Stylists working at this time. */
+  total: number;
+  staffIds: string[];
+}
+
 export interface AvailabilityResponse {
   date: string;
   serviceId: string;
+  closed: boolean;
+  hours: { open: string; close: string } | null;
+  grid: AvailabilityGridEntry[];
   slots: AvailabilitySlot[];
 }
 
@@ -93,6 +111,7 @@ export interface CurrentUser {
   name: string;
   role: 'CUSTOMER' | 'OWNER' | 'STAFF' | 'ADMIN';
   phone: string | null;
+  avatarUrl?: string | null;
 }
 
 export type BookingStatus =
@@ -111,6 +130,9 @@ export interface OwnerBusinessDetail {
   category: string;
   description: string | null;
   verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  lat: number;
+  lng: number;
+  address: string | null;
   city: { name: string };
   media: { id: string; url: string; type: string }[];
   services: Service[];
@@ -144,8 +166,11 @@ export interface MyBooking {
   slotStart: string;
   slotEnd: string;
   status: BookingStatus;
-  business: { id: string; name: string; image: string | null };
+  business: { id: string; name: string; image: string | null; lat: number; lng: number; address: string | null };
   service: { name: string; price: number; durationMinutes: number };
+  addOns: { id: string; name: string; price: number; durationMinutes: number }[];
+  totalAmount: number;
   staff: { name: string } | null;
   hasReview: boolean;
+  confirmationCode: string | null;
 }

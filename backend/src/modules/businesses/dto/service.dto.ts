@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { imageUrlSchema } from '../../../common/validation/image-url.js';
 
 export const createServiceSchema = z.object({
   categoryId: z.string().uuid().optional(),
@@ -6,6 +7,7 @@ export const createServiceSchema = z.object({
   price: z.number().positive(),
   durationMinutes: z.number().int().positive().max(600),
   description: z.string().max(1000).optional(),
+  imageUrl: imageUrlSchema.nullable().optional(),
 });
 export type CreateServiceDto = z.infer<typeof createServiceSchema>;
 

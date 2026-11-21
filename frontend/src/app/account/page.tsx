@@ -5,13 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { clearSession, getStoredUser, getToken, saveSession } from '@/lib/auth-client';
-import type { CurrentUser, MyBooking } from '@/lib/types';
+import type { BusinessDetail, CurrentUser, MyBooking, Service } from '@/lib/types';
+import AvatarPicker from '@/components/AvatarPicker';
+import CallButton from '@/components/CallButton';
+import { directionsUrl, formatTime } from '@/lib/image';
 
 interface Profile {
   id: string;
   name: string;
   phone: string | null;
   email: string | null;
+  avatarUrl: string | null;
   customerProfile: { reliabilityScore: string; requiresPrepayment: boolean } | null;
 }
 
@@ -25,7 +29,7 @@ const STATUS_STYLE: Record<string, string> = {
   NO_SHOW: 'bg-red-50 text-red-700',
 };
 
-const UPCOMING_STATUSES = new Set(['PENDING', 'CONFIRMED', 'RESCHEDULED']);
+const UPCOMING_STATUSES = new Set(['PENDING', 'CONFIRMED', 'RESCHEDULED', 'IN_PROGRESS']);
 
 function formatSlot(iso: string) {
   const d = new Date(iso);
@@ -91,12 +95,97 @@ function ReviewForm({ booking, onSubmitted }: { booking: MyBooking; onSubmitted:
   );
 }
 
+function AddServices({ booking, onAdded }: { booking: MyBooking; onAdded: () => void }) {
+  const [services, setServices] = useState<Service[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<BusinessDetail>(`/businesses/${booking.business.id}`)
+      .then((b) => {
+        const already = new Set([booking.service.name, ...booking.addOns.map((a) => a.name)]);
+        setServices(b.services.filter((s) => !already.has(s.name)));
+      })
+      .catch(() => setServices([]));
+  }, [booking]);
+
+  const chosen = services?.filter((s) => picked.has(s.id)) ?? [];
+  const extraPrice = chosen.reduce((sum, s) => sum + Number(s.price), 0);
+  const extraMins = chosen.reduce((sum, s) => sum + s.durationMinutes, 0);
+
+  async function submit() {
+    const token = getToken();
+    if (!token || chosen.length === 0) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/bookings/${booking.id}/add-services`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ serviceIds: chosen.map((s) => s.id) }),
+      });
+      setPicked(new Set());
+      onAdded();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not add services');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (services === null) return <p className="text-sm text-muted">Loading services…</p>;
+  if (services.length === 0) return <p className="text-sm text-muted">No other services to add.</p>;
+
+  return (
+    <div>
+      <div className="divide-y divide-border rounded-lg border border-border">
+        {services.map((s) => (
+          <label key={s.id} className="flex cursor-pointer items-center gap-3 p-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={picked.has(s.id)}
+              onChange={(e) => {
+                const next = new Set(picked);
+                if (e.target.checked) next.add(s.id);
+                else next.delete(s.id);
+                setPicked(next);
+              }}
+              className="h-4 w-4 accent-[var(--brand)]"
+            />
+            <span className="flex-1">
+              {s.name} <span className="text-muted">· {s.durationMinutes} min</span>
+            </span>
+            <span className="font-medium">₹{s.price}</span>
+          </label>
+        ))}
+      </div>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      <button
+        onClick={submit}
+        disabled={saving || chosen.length === 0}
+        className="mt-2 w-full rounded-xl bg-brand py-2.5 text-sm font-semibold text-brand-foreground disabled:opacity-50"
+      >
+        {saving
+          ? 'Adding…'
+          : chosen.length === 0
+            ? 'Select services to add'
+            : `Add ${chosen.length} service${chosen.length > 1 ? 's' : ''} · +₹${extraPrice} · +${extraMins} min`}
+      </button>
+    </div>
+  );
+}
+
 function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () => void }) {
+  const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [addingServices, setAddingServices] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canCancel = UPCOMING_STATUSES.has(booking.status);
+  const isUpcoming = UPCOMING_STATUSES.has(booking.status);
+  const canCancel = booking.status === 'PENDING' || booking.status === 'CONFIRMED';
   const canReview = booking.status === 'COMPLETED' && !booking.hasReview;
+  const canAddServices = isUpcoming && new Date(booking.slotStart) > new Date();
 
   async function cancelBooking() {
     const token = getToken();
@@ -114,8 +203,18 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-3">
-      <div className="flex gap-3">
+    <div className="overflow-hidden rounded-xl border border-border bg-surface">
+      {isUpcoming && booking.confirmationCode && (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full items-center justify-between bg-brand-tint px-3 py-2 text-left"
+        >
+          <span className="text-xs font-medium text-brand-dark">Confirmation code · show at the salon</span>
+          <span className="font-mono text-lg font-bold tracking-widest text-brand">{booking.confirmationCode}</span>
+        </button>
+      )}
+
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full gap-3 p-3 text-left">
         <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
           {booking.business.image && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -124,25 +223,102 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <Link href={`/salons/${booking.business.id}`} className="truncate font-medium hover:underline">
-              {booking.business.name}
-            </Link>
+            <span className="truncate font-medium">{booking.business.name}</span>
             <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLE[booking.status] ?? 'bg-neutral-100 text-muted'}`}>
               {booking.status.replace('_', ' ')}
             </span>
           </div>
-          <p className="text-sm text-muted">
+          <p className="truncate text-sm text-muted">
             {booking.service.name}
+            {booking.addOns.length > 0 && <> +{booking.addOns.length} more</>}
             {booking.staff && <> · {booking.staff.name}</>}
           </p>
           <p className="text-sm">{formatSlot(booking.slotStart)}</p>
         </div>
-      </div>
+        <span className={`self-center text-muted transition ${open ? 'rotate-180' : ''}`} aria-hidden>
+          ⌄
+        </span>
+      </button>
 
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {open && (
+        <div className="border-t border-border p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Booking details</p>
+          <div className="mt-2 space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span>{booking.service.name}</span>
+              <span>₹{booking.service.price}</span>
+            </div>
+            {booking.addOns.map((a) => (
+              <div key={a.id} className="flex justify-between">
+                <span>
+                  {a.name} <span className="text-xs text-muted">(added)</span>
+                </span>
+                <span>₹{a.price}</span>
+              </div>
+            ))}
+            <div className="flex justify-between border-t border-border pt-1 font-semibold">
+              <span>Total</span>
+              <span>₹{booking.totalAmount}</span>
+            </div>
+            <p className="text-muted">
+              {formatTime(booking.slotStart)} – {formatTime(booking.slotEnd)}
+            </p>
+          </div>
+
+          {isUpcoming && (
+            <p className="mt-3 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800">
+              ⏰ Please reach on time. Your slot is held for 10 minutes after the start time.
+            </p>
+          )}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {isUpcoming && <CallButton bookingId={booking.id} label="Call salon" />}
+            <a
+              href={directionsUrl(booking.business.lat, booking.business.lng)}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-border px-3.5 py-1.5 text-sm font-medium hover:bg-accent-tint"
+            >
+              📍 Directions
+            </a>
+            <Link
+              href={`/salons/${booking.business.id}`}
+              className="rounded-full border border-border px-3.5 py-1.5 text-sm font-medium hover:bg-accent-tint"
+            >
+              View salon
+            </Link>
+          </div>
+
+          {canAddServices && (
+            <div className="mt-3">
+              {addingServices ? (
+                <>
+                  <p className="mb-2 text-sm font-semibold">Add more services</p>
+                  <AddServices
+                    booking={booking}
+                    onAdded={() => {
+                      setAddingServices(false);
+                      onChange();
+                    }}
+                  />
+                </>
+              ) : (
+                <button
+                  onClick={() => setAddingServices(true)}
+                  className="w-full rounded-xl bg-brand-tint py-2.5 text-sm font-semibold text-brand-dark"
+                >
+                  + Add more services
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="px-3 pb-2 text-sm text-red-600">{error}</p>}
 
       {(canCancel || canReview) && (
-        <div className="mt-2 flex gap-2">
+        <div className="flex gap-2 px-3 pb-3">
           {canCancel && (
             <button
               onClick={cancelBooking}
@@ -163,7 +339,11 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
         </div>
       )}
 
-      {reviewing && <ReviewForm booking={booking} onSubmitted={onChange} />}
+      {reviewing && (
+        <div className="px-3 pb-3">
+          <ReviewForm booking={booking} onSubmitted={onChange} />
+        </div>
+      )}
     </div>
   );
 }
@@ -232,7 +412,9 @@ export default function AccountPage() {
 
   if (!user || bookings === null) return <div className="p-6 text-sm text-muted">Loading…</div>;
 
-  const upcoming = bookings.filter((b) => UPCOMING_STATUSES.has(b.status));
+  const upcoming = bookings
+    .filter((b) => UPCOMING_STATUSES.has(b.status))
+    .sort((a, b) => new Date(a.slotStart).getTime() - new Date(b.slotStart).getTime());
   const past = bookings.filter((b) => !UPCOMING_STATUSES.has(b.status));
   const visible = tab === 'upcoming' ? upcoming : past;
 
@@ -240,9 +422,11 @@ export default function AccountPage() {
     <div className="flex flex-1 flex-col">
       <div className="bg-foreground px-4 pb-10 pt-6 text-white">
         <div className="mx-auto flex max-w-2xl items-center gap-4">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-brand text-2xl font-bold text-brand-foreground ring-4 ring-white/10">
-            {(profile?.name ?? user.name).charAt(0).toUpperCase()}
-          </div>
+          <AvatarPicker
+            name={profile?.name ?? user.name}
+            avatarUrl={profile?.avatarUrl}
+            onChange={(url) => setProfile((p) => (p ? { ...p, avatarUrl: url } : p))}
+          />
           <div className="min-w-0 flex-1">
             {editingName ? (
               <div className="flex gap-2">

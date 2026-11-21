@@ -25,6 +25,13 @@ export const envSchema = z.object({
   WEB_APP_URL: z.string().default('http://localhost:3000'),
   WEB_APP_URL_PATTERN: z.string().optional(),
 
+  // Masked calling (Exotel). All four required to enable calls.
+  EXOTEL_SID: z.string().optional(),
+  EXOTEL_API_KEY: z.string().optional(),
+  EXOTEL_API_TOKEN: z.string().optional(),
+  EXOTEL_CALLER_ID: z.string().optional(),
+  EXOTEL_SUBDOMAIN: z.string().optional(),
+
   // FR-2.1 AC: default sort weighting must be configurable, not hardcoded.
   SEARCH_WEIGHT_DISTANCE: z.coerce.number().default(0.4),
   SEARCH_WEIGHT_RATING: z.coerce.number().default(0.4),

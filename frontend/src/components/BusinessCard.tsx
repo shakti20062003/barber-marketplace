@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { BusinessCard as BusinessCardType } from '@/lib/types';
+import { formatHhmm } from '@/lib/image';
 
 const BADGE_STYLE: Record<string, { label: string; className: string }> = {
   VERIFIED: { label: '✓ Verified', className: 'bg-accent-tint text-accent' },
@@ -7,6 +8,11 @@ const BADGE_STYLE: Record<string, { label: string; className: string }> = {
   PREMIUM_PARTNER: { label: 'Premium', className: 'bg-violet-50 text-violet-700' },
   FEATURED: { label: 'Featured', className: 'bg-brand-tint text-brand-dark' },
 };
+
+function openLabel(b: BusinessCardType): string {
+  if (b.openNow) return 'Open';
+  return b.todayHours ? 'Closed now' : 'Closed today';
+}
 
 export default function BusinessCard({ business }: { business: BusinessCardType }) {
   return (
@@ -26,13 +32,16 @@ export default function BusinessCard({ business }: { business: BusinessCardType 
             business.openNow ? 'bg-emerald-600' : 'bg-neutral-500'
           }`}
         >
-          {business.openNow ? 'Open' : 'Closed'}
+          {openLabel(business)}
         </span>
       </div>
       <div className="flex min-w-0 flex-1 flex-col justify-between">
         <div>
           <h3 className="truncate font-semibold text-foreground">{business.name}</h3>
           <p className="text-sm text-muted">{business.category}</p>
+          {!business.openNow && business.todayHours && (
+            <p className="text-xs text-muted">Today {formatHhmm(business.todayHours.open)}–{formatHhmm(business.todayHours.close)}</p>
+          )}
           {business.trustBadges.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {business.trustBadges.slice(0, 2).map((badge) => {

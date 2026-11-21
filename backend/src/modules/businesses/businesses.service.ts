@@ -8,22 +8,18 @@ import type { CreateServiceDto, UpdateServiceDto } from './dto/service.dto.js';
 import type { CreateStaffDto, UpdateStaffDto } from './dto/staff.dto.js';
 import type { AvailabilityQueryDto } from './dto/availability-query.dto.js';
 import type { CreateMediaDto } from './dto/media.dto.js';
-
-const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
-
-function isOpenNow(workingHours: unknown): boolean {
-  if (!workingHours || typeof workingHours !== 'object') return false;
-  const now = new Date();
-  const dayKey = DAY_KEYS[now.getDay()];
-  const today = (workingHours as Record<string, { open: string; close: string; closed: boolean }>)[
-    dayKey
-  ];
-  if (!today || today.closed) return false;
-  const [openH, openM] = today.open.split(':').map(Number);
-  const [closeH, closeM] = today.close.split(':').map(Number);
-  const minutesNow = now.getHours() * 60 + now.getMinutes();
-  return minutesNow >= openH * 60 + openM && minutesNow <= closeH * 60 + closeM;
-}
+import {
+  SLOT_STEP_MINUTES,
+  BLOCKING_STATUSES,
+  businessWindowFor,
+  dbDateFor,
+  isBlocking,
+  isPastGrace,
+  isOpenAt,
+  localDayStart,
+  staffWindowsFor,
+  todaysHours,
+} from '../../common/scheduling/schedule.js';
 
 @Injectable()
 export class BusinessesService {
@@ -71,7 +67,7 @@ export class BusinessesService {
         const distanceKm = haversineDistanceKm(dto.lat, dto.lng, b.lat, b.lng);
         const avgRating =
           b.reviews.length > 0 ? b.reviews.reduce((s, r) => s + r.rating, 0) / b.reviews.length : 0;
-        const openNow = isOpenNow(b.workingHours);
+        const openNow = isOpenAt(b.workingHours);
         if (distanceKm > dto.radiusKm) return null;
         if (dto.openNow && !openNow) return null;
         if (!relaxed.minRating && dto.minRating && avgRating < dto.minRating) return null;
@@ -95,6 +91,7 @@ export class BusinessesService {
           distanceKm: Math.round(distanceKm * 10) / 10,
           startingPrice: b.services[0]?.price ?? null,
           openNow,
+          todayHours: todaysHours(b.workingHours),
           trustBadges: b.trustBadges.map((t) => t.badgeType),
           score,
         };
@@ -154,7 +151,7 @@ export class BusinessesService {
       // Unverified salons must never leak into results (§4.4).
       throw new NotFoundException('Business not found');
     }
-    return business;
+    return { ...business, openNow: isOpenAt(business.workingHours), todayHours: todaysHours(business.workingHours) };
   }
 
   async findByOwner(ownerUserId: string) {
@@ -204,6 +201,8 @@ export class BusinessesService {
 
   async updateService(businessId: string, serviceId: string, ownerUserId: string, dto: UpdateServiceDto) {
     await this.assertOwnership(businessId, ownerUserId);
+    const existing = await this.prisma.service.findUnique({ where: { id: serviceId } });
+    if (!existing || existing.businessId !== businessId) throw new NotFoundException('Service not found');
     return this.prisma.service.update({ where: { id: serviceId }, data: dto });
   }
 
@@ -214,6 +213,8 @@ export class BusinessesService {
 
   async updateStaff(businessId: string, staffId: string, ownerUserId: string, dto: UpdateStaffDto) {
     await this.assertOwnership(businessId, ownerUserId);
+    const existing = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!existing || existing.businessId !== businessId) throw new NotFoundException('Staff member not found');
     return this.prisma.staff.update({ where: { id: staffId }, data: dto });
   }
 
@@ -232,79 +233,106 @@ export class BusinessesService {
   }
 
   /**
-   * Computes open slots for a service/date by subtracting existing bookings
-   * (and, for a specific staff member, their weekly availability + one-off
-   * overrides) from the business's working hours. "Any staff" mode checks
-   * aggregate capacity across all active staff instead of one calendar.
+   * Bookable start times for a service on a date, plus a per-time "how busy"
+   * grid for the BookMyShow-style colour coding on the booking page.
+   *
+   * Every staff member's windows are clipped to the salon's working hours
+   * for that day (a salon closed that day has no slots at all — this used to
+   * be ignored, so a salon showing "Closed" was still bookable). Start times
+   * are offered every SLOT_STEP_MINUTES; a staff member is free for a start
+   * time if [start, start + duration) sits inside one of their windows and
+   * overlaps no booking that still blocks (see isBlocking: late, un-started
+   * bookings release their time after the grace period).
    */
   async availability(businessId: string, query: AvailabilityQueryDto) {
-    const service = await this.prisma.service.findUnique({ where: { id: query.serviceId } });
-    if (!service || service.businessId !== businessId) {
+    const [service, business] = await Promise.all([
+      this.prisma.service.findUnique({ where: { id: query.serviceId } }),
+      this.prisma.business.findUnique({ where: { id: businessId }, select: { workingHours: true } }),
+    ]);
+    if (!service || service.businessId !== businessId || !business) {
       throw new NotFoundException('Service not found for this business');
     }
 
-    const staffList = query.staffId
-      ? await this.prisma.staff.findMany({ where: { id: query.staffId, businessId, active: true } })
-      : await this.prisma.staff.findMany({ where: { businessId, active: true } });
-
+    const staffList = await this.prisma.staff.findMany({
+      where: query.staffId ? { id: query.staffId, businessId, active: true } : { businessId, active: true },
+      include: { availability: true },
+    });
     if (query.staffId && staffList.length === 0) {
       throw new NotFoundException('Staff member not found for this business');
     }
 
-    const dayStart = new Date(`${query.date}T00:00:00`);
-    const dayEnd = new Date(`${query.date}T23:59:59`);
-    const dayOfWeek = dayStart.getDay();
+    const day = localDayStart(query.date);
+    const dayEnd = new Date(day.getTime() + 86_400_000);
+    const businessWindow = businessWindowFor(business.workingHours, day);
+    const durationMs = service.durationMinutes * 60_000;
 
-    const existingBookings = await this.prisma.booking.findMany({
-      where: {
-        businessId,
-        slotStart: { gte: dayStart, lte: dayEnd },
-        status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
-        staffId: query.staffId ? query.staffId : { in: staffList.map((s) => s.id) },
-      },
-      select: { staffId: true, slotStart: true, slotEnd: true },
-    });
+    const empty = {
+      date: query.date,
+      serviceId: query.serviceId,
+      closed: !businessWindow,
+      hours: businessWindow ? { open: businessWindow.start.toISOString(), close: businessWindow.end.toISOString() } : null,
+      grid: [] as { start: string; end: string; available: number; total: number; staffIds: string[] }[],
+      slots: [] as { staffId: string; start: string; end: string }[],
+    };
+    if (!businessWindow || staffList.length === 0) return empty;
 
-    const slots: { staffId: string; start: string; end: string }[] = [];
-    for (const staff of staffList) {
-      const weekly = await this.prisma.staffAvailability.findMany({
-        where: { staffId: staff.id, dayOfWeek },
+    const [overrides, bookings] = await Promise.all([
+      this.prisma.staffAvailabilityOverride.findMany({
+        where: { staffId: { in: staffList.map((s) => s.id) }, specificDate: dbDateFor(day) },
+      }),
+      this.prisma.booking.findMany({
+        where: {
+          businessId,
+          staffId: { in: staffList.map((s) => s.id) },
+          status: { in: BLOCKING_STATUSES },
+          slotStart: { lt: dayEnd },
+          slotEnd: { gt: day },
+        },
+        select: { staffId: true, status: true, slotStart: true, slotEnd: true },
+      }),
+    ]);
+
+    const now = new Date();
+    const blocking = bookings.filter((b) => isBlocking(b, now));
+    const dow = day.getDay();
+    const staffWindows = staffList.map((s) => ({
+      id: s.id,
+      windows: staffWindowsFor(
+        day,
+        businessWindow,
+        s.availability.filter((a) => a.dayOfWeek === dow),
+        overrides.find((o) => o.staffId === s.id) ?? null,
+      ),
+    }));
+
+    const grid: typeof empty.grid = [];
+    for (
+      let t = businessWindow.start.getTime();
+      t + durationMs <= businessWindow.end.getTime();
+      t += SLOT_STEP_MINUTES * 60_000
+    ) {
+      const start = new Date(t);
+      const end = new Date(t + durationMs);
+      if (start <= now) continue;
+      const working = staffWindows.filter((s) => s.windows.some((w) => start >= w.start && end <= w.end));
+      if (working.length === 0) continue;
+      const free = working.filter(
+        (s) => !blocking.some((b) => b.staffId === s.id && start < b.slotEnd && end > b.slotStart),
+      );
+      grid.push({
+        start: start.toISOString(),
+        end: end.toISOString(),
+        available: free.length,
+        total: working.length,
+        staffIds: free.map((s) => s.id),
       });
-      const override = await this.prisma.staffAvailabilityOverride.findFirst({
-        where: { staffId: staff.id, specificDate: dayStart },
-      });
-      if (override?.isClosed) continue;
-
-      const windows = override?.startTime && override.endTime
-        ? [{ startTime: override.startTime, endTime: override.endTime }]
-        : weekly;
-
-      for (const window of windows) {
-        const [startH, startM] = window.startTime.split(':').map(Number);
-        const [endH, endM] = window.endTime.split(':').map(Number);
-        let cursor = new Date(dayStart);
-        cursor.setHours(startH, startM, 0, 0);
-        const windowEnd = new Date(dayStart);
-        windowEnd.setHours(endH, endM, 0, 0);
-
-        while (cursor.getTime() + service.durationMinutes * 60_000 <= windowEnd.getTime()) {
-          const slotStart = new Date(cursor);
-          const slotEnd = new Date(cursor.getTime() + service.durationMinutes * 60_000);
-          const overlaps = existingBookings.some(
-            (b) =>
-              b.staffId === staff.id &&
-              slotStart < b.slotEnd &&
-              slotEnd > b.slotStart,
-          );
-          if (!overlaps && slotStart > new Date()) {
-            slots.push({ staffId: staff.id, start: slotStart.toISOString(), end: slotEnd.toISOString() });
-          }
-          cursor = new Date(cursor.getTime() + service.durationMinutes * 60_000);
-        }
-      }
     }
 
-    return { date: query.date, serviceId: query.serviceId, slots };
+    return {
+      ...empty,
+      grid,
+      slots: grid.flatMap((g) => g.staffIds.map((staffId) => ({ staffId, start: g.start, end: g.end }))),
+    };
   }
 
   async ownerDashboard(ownerUserId: string, businessId: string) {
@@ -317,7 +345,14 @@ export class BusinessesService {
     const [todaysBookings, cancellationsToday, revenueAgg] = await Promise.all([
       this.prisma.booking.findMany({
         where: { businessId, slotStart: { gte: todayStart, lte: todayEnd } },
-        include: { service: true, customer: { select: { name: true, phone: true } }, staff: true },
+        // Customer phone deliberately omitted: calls go through the masked
+        // call bridge (POST /bookings/:id/call), never a visible number.
+        include: {
+          service: true,
+          customer: { select: { name: true } },
+          staff: true,
+          addOns: { include: { service: { select: { name: true } } } },
+        },
         orderBy: { slotStart: 'asc' },
       }),
       this.prisma.booking.count({
@@ -332,8 +367,12 @@ export class BusinessesService {
       }),
     ]);
 
+    const now = new Date();
     return {
-      todaysBookings,
+      todaysBookings: todaysBookings.map(({ otpHash: _h, otpCode: _c, ...b }) => ({
+        ...b,
+        lateNoShowCandidate: isPastGrace(b, now),
+      })),
       cancellationsToday,
       revenueToday: revenueAgg._sum.amount ?? 0,
     };

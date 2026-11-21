@@ -1,9 +1,17 @@
+// Salon working hours ("09:00") are local wall-clock times. Servers (Render)
+// run in UTC, which made slots start at 2:30 PM IST. All date maths in the
+// API assumes the salon timezone, so pin it before anything reads the clock.
+process.env.TZ ||= 'Asia/Kolkata';
+
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  // On-device photo uploads arrive as (already downscaled) data URLs.
+  app.useBodyParser('json', { limit: '3mb' });
   const config = app.get(ConfigService);
 
   app.setGlobalPrefix('api');

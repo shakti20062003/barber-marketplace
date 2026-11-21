@@ -11,7 +11,17 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { SlotLockService } from '../../common/redis/slot-lock.service.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import { generateBookingOtp, hashBookingOtp } from './otp.util.js';
+import { CallBridgeService } from './call-bridge.service.js';
+import {
+  BLOCKING_STATUSES,
+  businessWindowFor,
+  dbDateFor,
+  isBlocking,
+  startOfLocalDay,
+  staffWindowsFor,
+} from '../../common/scheduling/schedule.js';
 import type {
+  AddServicesDto,
   CancelBookingDto,
   CompleteBookingDto,
   CreateBookingDto,
@@ -19,10 +29,21 @@ import type {
   RescheduleBookingDto,
 } from './dto/create-booking.dto.js';
 
-const ACTIVE_STATUSES: BookingStatus[] = ['PENDING', 'CONFIRMED', 'IN_PROGRESS'];
 const DEFAULT_FREE_CANCELLATION_HOURS = 2; // §4.3 platform default
 const NO_SHOW_ROLLING_WINDOW_DAYS = 90; // §4.5 / ADR-005
 const NO_SHOW_PREPAYMENT_THRESHOLD = 2; // §4.5
+
+/**
+ * Razorpay order creation is still a stub (see TODO in create()): a PAY_NOW
+ * booking would sit PENDING, holding the slot, with no way to pay. Remove
+ * this once online payment is wired up. (A plain function rather than an
+ * inline check so TypeScript doesn't narrow away the PAY_NOW branches.)
+ */
+function assertPaymentMethodAvailable(method: string): void {
+  if (method === 'PAY_NOW') {
+    throw new BadRequestException('Online payment is coming soon. Please choose Pay at shop.');
+  }
+}
 
 interface CancellationPolicy {
   freeCancellationHours: number;
@@ -34,6 +55,7 @@ export class BookingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly slotLock: SlotLockService,
+    private readonly callBridge: CallBridgeService,
   ) {}
 
   private policyFor(business: { cancellationPolicy: unknown }): CancellationPolicy {
@@ -44,37 +66,51 @@ export class BookingsService {
     };
   }
 
-  private async staffAvailableForSlot(staffId: string, slotStart: Date, slotEnd: Date): Promise<boolean> {
-    const dayOfWeek = slotStart.getDay();
-    const dateOnly = new Date(slotStart);
-    dateOnly.setHours(0, 0, 0, 0);
-
-    const [weekly, override, overlapping] = await Promise.all([
-      this.prisma.staffAvailability.findMany({ where: { staffId, dayOfWeek } }),
-      this.prisma.staffAvailabilityOverride.findFirst({ where: { staffId, specificDate: dateOnly } }),
-      this.prisma.booking.findFirst({
+  /**
+   * Same rules as the availability grid (common/scheduling): inside the
+   * salon's hours for that day, inside the staff member's windows, and not
+   * overlapping any booking that still blocks. `excludeBookingId` lets a
+   * booking be checked against everything except itself (reschedule,
+   * adding services).
+   */
+  private async staffAvailableForSlot(
+    staffId: string,
+    slotStart: Date,
+    slotEnd: Date,
+    excludeBookingId?: string,
+  ): Promise<boolean> {
+    const day = startOfLocalDay(slotStart);
+    const [staff, override, overlapping] = await Promise.all([
+      this.prisma.staff.findUnique({
+        where: { id: staffId },
+        include: {
+          availability: { where: { dayOfWeek: day.getDay() } },
+          business: { select: { workingHours: true } },
+        },
+      }),
+      this.prisma.staffAvailabilityOverride.findFirst({ where: { staffId, specificDate: dbDateFor(day) } }),
+      this.prisma.booking.findMany({
         where: {
           staffId,
-          status: { in: ACTIVE_STATUSES },
+          id: excludeBookingId ? { not: excludeBookingId } : undefined,
+          status: { in: BLOCKING_STATUSES },
           slotStart: { lt: slotEnd },
           slotEnd: { gt: slotStart },
         },
+        select: { status: true, slotStart: true },
       }),
     ]);
+    if (!staff || !staff.active) return false;
+    const now = new Date();
+    if (overlapping.some((b) => isBlocking(b, now))) return false;
 
-    if (overlapping) return false;
-    if (override?.isClosed) return false;
-
-    const windows = override?.startTime && override.endTime ? [override] : weekly;
-    return windows.some((w) => {
-      const [sh, sm] = w.startTime!.split(':').map(Number);
-      const [eh, em] = w.endTime!.split(':').map(Number);
-      const windowStart = new Date(dateOnly);
-      windowStart.setHours(sh, sm, 0, 0);
-      const windowEnd = new Date(dateOnly);
-      windowEnd.setHours(eh, em, 0, 0);
-      return slotStart >= windowStart && slotEnd <= windowEnd;
-    });
+    const windows = staffWindowsFor(
+      day,
+      businessWindowFor(staff.business.workingHours, day),
+      staff.availability,
+      override,
+    );
+    return windows.some((w) => slotStart >= w.start && slotEnd <= w.end);
   }
 
   private async findAnyAvailableStaff(businessId: string, slotStart: Date, slotEnd: Date): Promise<string | null> {
@@ -94,6 +130,7 @@ export class BookingsService {
     if (!business || business.verificationStatus !== 'VERIFIED') {
       throw new NotFoundException('Business not found');
     }
+    assertPaymentMethodAvailable(dto.paymentMethod);
     if (dto.serviceLocationType === 'HOME_SERVICE' && !dto.addressId) {
       throw new BadRequestException('addressId is required for home service bookings');
     }
@@ -145,6 +182,10 @@ export class BookingsService {
             serviceLocationType: dto.serviceLocationType,
             addressId: dto.addressId,
             otpHash: otp.hash,
+            // Kept so the customer can see their code again under Upcoming
+            // bookings. Only ever returned to the booking's own customer —
+            // never in owner/staff payloads.
+            otpCode: otp.code,
           },
         });
         await tx.payment.create({
@@ -192,10 +233,21 @@ export class BookingsService {
       where: { customerId },
       orderBy: { slotStart: 'desc' },
       include: {
-        business: { select: { id: true, name: true, media: { take: 1, orderBy: { order: 'asc' } } } },
+        business: {
+          select: {
+            id: true,
+            name: true,
+            lat: true,
+            lng: true,
+            address: true,
+            media: { take: 1, orderBy: { order: 'asc' } },
+          },
+        },
         service: { select: { name: true, price: true, durationMinutes: true } },
         staff: { select: { name: true } },
         review: { select: { id: true } },
+        payment: { select: { amount: true } },
+        addOns: { include: { service: { select: { name: true } } }, orderBy: { createdAt: 'asc' } },
       },
     });
 
@@ -204,10 +256,26 @@ export class BookingsService {
       slotStart: b.slotStart,
       slotEnd: b.slotEnd,
       status: b.status,
-      business: { id: b.business.id, name: b.business.name, image: b.business.media[0]?.url ?? null },
+      business: {
+        id: b.business.id,
+        name: b.business.name,
+        image: b.business.media[0]?.url ?? null,
+        lat: b.business.lat,
+        lng: b.business.lng,
+        address: b.business.address,
+      },
       service: { name: b.service.name, price: b.service.price, durationMinutes: b.service.durationMinutes },
+      addOns: b.addOns.map((a) => ({
+        id: a.id,
+        name: a.service.name,
+        price: a.price,
+        durationMinutes: a.durationMinutes,
+      })),
+      totalAmount: b.payment?.amount ?? b.service.price,
       staff: b.staff ? { name: b.staff.name } : null,
       hasReview: b.review != null,
+      // Only while the code is still useful (before the visit is done).
+      confirmationCode: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(b.status) ? b.otpCode : null,
     }));
   }
 
@@ -284,8 +352,7 @@ export class BookingsService {
     staffId: string | null,
     slotStart: Date,
   ) {
-    const dateOnly = new Date(slotStart);
-    dateOnly.setHours(0, 0, 0, 0);
+    const dateOnly = dbDateFor(startOfLocalDay(slotStart));
 
     const entry = await this.prisma.waitlistEntry.findFirst({
       where: {
@@ -315,7 +382,7 @@ export class BookingsService {
 
     const newSlotStart = new Date(dto.slotStart);
     if (newSlotStart <= new Date()) throw new BadRequestException('slotStart must be in the future');
-    const newSlotEnd = new Date(newSlotStart.getTime() + booking.service.durationMinutes * 60_000);
+    const newSlotEnd = new Date(newSlotStart.getTime() + (booking.slotEnd.getTime() - booking.slotStart.getTime()));
     const newStaffId = dto.staffId ?? booking.staffId;
 
     const lockToken = await this.slotLock.acquire(booking.businessId, newStaffId ?? 'any', newSlotStart.toISOString());
@@ -323,7 +390,7 @@ export class BookingsService {
 
     try {
       if (newStaffId) {
-        const available = await this.staffAvailableForSlot(newStaffId, newSlotStart, newSlotEnd);
+        const available = await this.staffAvailableForSlot(newStaffId, newSlotStart, newSlotEnd, bookingId);
         if (!available) throw new ConflictException('That staff member is not available for the new slot');
       }
 
@@ -359,7 +426,10 @@ export class BookingsService {
     if (!(actor.role === 'OWNER' || actor.role === 'STAFF')) {
       throw new ForbiddenException('Only salon staff can mark a booking complete');
     }
-    if (booking.status !== 'CONFIRMED') {
+    if (actor.role === 'OWNER' && booking.business.ownerUserId !== actor.id) {
+      throw new ForbiddenException('Not your salon');
+    }
+    if (booking.status !== 'CONFIRMED' && booking.status !== 'IN_PROGRESS') {
       throw new BadRequestException(`Cannot complete a booking in status ${booking.status}`);
     }
     if (!booking.otpHash || hashBookingOtp(dto.otp) !== booking.otpHash) {
@@ -379,6 +449,102 @@ export class BookingsService {
     ]);
 
     return updated;
+  }
+
+  /**
+   * Salon checks the customer in. Moving to IN_PROGRESS is what keeps the
+   * slot held past the 10-minute late grace period (see isBlocking).
+   */
+  async start(bookingId: string, actor: AuthenticatedUser) {
+    const booking = await this.loadForActor(bookingId);
+    if (actor.role !== 'OWNER' || booking.business.ownerUserId !== actor.id) {
+      throw new ForbiddenException('Only the salon can check a customer in');
+    }
+    if (booking.status !== 'CONFIRMED') {
+      throw new BadRequestException(`Cannot start a booking in status ${booking.status}`);
+    }
+    return this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'IN_PROGRESS' } });
+  }
+
+  /**
+   * Customer adds more services to an upcoming booking. The booking is
+   * extended to cover the extra time — only if the same staff member is
+   * still free for the longer slot — and the amount due goes up.
+   */
+  async addServices(bookingId: string, actor: AuthenticatedUser, dto: AddServicesDto) {
+    const booking = await this.loadForActor(bookingId);
+    if (booking.customerId !== actor.id) throw new ForbiddenException('Not your booking');
+    if (!['PENDING', 'CONFIRMED'].includes(booking.status)) {
+      throw new BadRequestException('Services can only be added to an upcoming booking');
+    }
+    if (booking.slotStart <= new Date()) {
+      throw new BadRequestException('This booking has already started — ask the salon to add services');
+    }
+
+    const uniqueIds = [...new Set(dto.serviceIds)];
+    const services = await this.prisma.service.findMany({
+      where: { id: { in: uniqueIds }, businessId: booking.businessId, active: true },
+    });
+    if (services.length !== uniqueIds.length) {
+      throw new NotFoundException('One or more services are not offered by this salon');
+    }
+
+    const extraMinutes = services.reduce((sum, s) => sum + s.durationMinutes, 0);
+    const extraAmount = services.reduce((sum, s) => sum + Number(s.price), 0);
+    const newSlotEnd = new Date(booking.slotEnd.getTime() + extraMinutes * 60_000);
+
+    if (booking.staffId) {
+      const free = await this.staffAvailableForSlot(booking.staffId, booking.slotStart, newSlotEnd, bookingId);
+      if (!free) {
+        throw new ConflictException(
+          `Your stylist isn't free for the extra ${extraMinutes} min after this booking. Try fewer services, or book them separately.`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.bookingAddOn.createMany({
+        data: services.map((s) => ({
+          bookingId,
+          serviceId: s.id,
+          price: s.price,
+          durationMinutes: s.durationMinutes,
+        })),
+      }),
+      this.prisma.booking.update({ where: { id: bookingId }, data: { slotEnd: newSlotEnd } }),
+      // Unpaid amounts simply grow; an already-paid booking pays the
+      // difference at the salon.
+      this.prisma.payment.updateMany({
+        where: { bookingId, status: { in: ['CREATED', 'PENDING'] } },
+        data: { amount: { increment: extraAmount } },
+      }),
+    ]);
+
+    return { slotEnd: newSlotEnd, extraMinutes, extraAmount };
+  }
+
+  /** Masked call between the booking's customer and the salon owner (either direction). */
+  async call(bookingId: string, actor: AuthenticatedUser) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        customer: { select: { phone: true } },
+        business: { select: { ownerUserId: true, owner: { select: { phone: true } } } },
+      },
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+    const isCustomer = booking.customerId === actor.id;
+    const isOwner = actor.role === 'OWNER' && booking.business.ownerUserId === actor.id;
+    if (!isCustomer && !isOwner) throw new ForbiddenException('Not part of this booking');
+    if (!['PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(booking.status)) {
+      throw new BadRequestException('Calling is only available for active bookings');
+    }
+    const customerPhone = booking.customer.phone;
+    const salonPhone = booking.business.owner.phone;
+    if (!customerPhone || !salonPhone) throw new BadRequestException('No phone number on file for this booking');
+
+    await this.callBridge.connect(isCustomer ? customerPhone : salonPhone, isCustomer ? salonPhone : customerPhone);
+    return { calling: true, message: 'We are calling your phone now. Pick up to be connected.' };
   }
 
   async markNoShow(bookingId: string, actor: AuthenticatedUser, dto: MarkNoShowDto) {

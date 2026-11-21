@@ -132,6 +132,7 @@ model User {
   phone        String?      @unique
   email        String?      @unique
   authProvider AuthProvider
+  avatarUrl    String?
   createdAt    DateTime     @default(now())
 
   customerProfile CustomerProfile?
@@ -210,6 +211,7 @@ model Business {
   verificationStatus  VerificationStatus @default(PENDING)
   lat                 Float
   lng                 Float
+  address             String?
   cityId              String
   workingHours        Json
   // §4.3: { freeCancellationHours: number, penaltyPercent: number (0-100) }.
@@ -287,12 +289,14 @@ model Service {
   price           Decimal  @db.Decimal(10, 2)
   durationMinutes Int
   description     String?
+  imageUrl        String?
   active          Boolean  @default(true)
 
   business        Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   category        Category?       @relation(fields: [categoryId], references: [id])
   bookings        Booking[]
   waitlistEntries WaitlistEntry[]
+  bookingAddOns   BookingAddOn[]
 
   @@index([businessId])
   @@map("services")
@@ -408,6 +412,7 @@ model Booking {
   serviceLocationType ServiceLocationType @default(IN_SALON)
   addressId           String?
   otpHash             String?
+  otpCode             String?
   cancellationReason  String?
   noShowReasonCode    String?
   createdAt           DateTime            @default(now())
@@ -419,6 +424,7 @@ model Booking {
   address  Address?  @relation(fields: [addressId], references: [id])
   payment  Payment?
   review   Review?
+  addOns   BookingAddOn[]
   waitlistClaims WaitlistEntry[]
   portfolioMedia StaffPortfolioMedia[]
   loyaltyEntries LoyaltyPointsLedger[]
@@ -428,6 +434,21 @@ model Booking {
   @@index([customerId])
   @@index([staffId, slotStart])
   @@map("bookings")
+}
+
+model BookingAddOn {
+  id              String   @id @default(uuid())
+  bookingId       String
+  serviceId       String
+  price           Decimal  @db.Decimal(10, 2)
+  durationMinutes Int
+  createdAt       DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@index([bookingId])
+  @@map("booking_add_ons")
 }
 
 model Payment {

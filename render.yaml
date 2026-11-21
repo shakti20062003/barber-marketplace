@@ -15,6 +15,10 @@ services:
         value: development
       - key: PORT
         value: 4000
+      # Salon hours are local times; the server must run in IST or slots
+      # shift by +5:30 (main.ts also defaults this if unset).
+      - key: TZ
+        value: Asia/Kolkata
       - key: DATABASE_URL
         fromDatabase:
           name: trimly-db
@@ -35,6 +39,16 @@ services:
       # Render suffixes service URLs when the name is taken (e.g. trimly-web-ab12).
       - key: WEB_APP_URL_PATTERN
         value: ^https://trimly-web(-[a-z0-9]+)?\.onrender\.com$
+      # Masked calling (Exotel). Fill these in the Render dashboard to enable
+      # the call buttons; without them calls show "coming soon".
+      - key: EXOTEL_SID
+        sync: false
+      - key: EXOTEL_API_KEY
+        sync: false
+      - key: EXOTEL_API_TOKEN
+        sync: false
+      - key: EXOTEL_CALLER_ID
+        sync: false
       - key: SEARCH_WEIGHT_DISTANCE
         value: 0.4
       - key: SEARCH_WEIGHT_RATING

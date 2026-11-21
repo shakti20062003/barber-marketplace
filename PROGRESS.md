@@ -385,3 +385,38 @@ Reported after first use on a phone against the Render deploy:
 8. Owner: upload photos/service images from device, owner profile picture,
    exact map location; customer sees map + directions.
 New: compare two salons side by side.
+
+### Done (2026-11-21)
+
+All eight items plus the compare feature are built, along with fixes for
+problems found on the way:
+- Scheduling rewritten around `common/scheduling/schedule.ts`: IST
+  timezone, salon-hours clipping, closed days have no slots, default staff
+  hours, 15-min start grid, 10-min late grace, correct `@db.Date` queries.
+  The availability `grid` drives green/amber/full slot colours, with a
+  per-period trend (Morning/Afternoon/Evening) on the booking page.
+- Check-in (`/start`), complete from IN_PROGRESS, and owner dashboard
+  actions: arrived, complete with code, no-show/cancel once 10+ min late,
+  auto-refresh each minute.
+- Confirmation code under Upcoming; expandable booking details with
+  add-on services, call salon, and directions.
+- Masked calling via Exotel (needs credentials); customer phone numbers
+  removed from the owner dashboard payload.
+- Admin tiles clickable, each with a searchable list (salons by status,
+  customers, owners, bookings); salons can be unlisted or re-verified.
+- Device photo upload (salon photos, service photos, profile pictures);
+  owner location via GPS or a Google Maps link, plus address; customers get
+  a map embed and directions.
+- New `/compare` page and a home-page entry point.
+- Also fixed: owners could edit other salons' services/staff by ID;
+  duplicate VERIFIED badges; PAY_NOW bookings stuck PENDING (online payment
+  now disabled until Razorpay is live); new owners got Mumbai coordinates;
+  the booking page's default date was the UTC date.
+- Verified: backend tsc + oxlint, 11 vitest tests (new
+  `schedule.spec.ts`), frontend tsc + eslint + production build, and a
+  22-check end-to-end API script against the local DB (customer → owner →
+  admin). Not yet done: a visual pass on a real phone, and masked calling
+  against a live Exotel account.
+- Migration `20261121073150_founder_feedback_fields` (otpCode, address,
+  Service.imageUrl, User.avatarUrl, booking_add_ons). Render applies it on
+  deploy via `migrate deploy`.

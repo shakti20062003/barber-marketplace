@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
@@ -21,6 +21,25 @@ export class AdminController {
   @Get('stats')
   stats() {
     return this.admin.stats();
+  }
+
+  @Get('businesses')
+  businesses(@Query('status') status: string) {
+    if (status !== 'PENDING' && status !== 'VERIFIED' && status !== 'REJECTED') {
+      throw new BadRequestException('status must be PENDING, VERIFIED or REJECTED');
+    }
+    return this.admin.businessesByStatus(status);
+  }
+
+  @Get('users')
+  users(@Query('role') role: string) {
+    if (role !== 'CUSTOMER' && role !== 'OWNER') throw new BadRequestException('role must be CUSTOMER or OWNER');
+    return this.admin.users(role);
+  }
+
+  @Get('bookings')
+  bookings() {
+    return this.admin.recentBookings();
   }
 
   @Get('businesses/pending')

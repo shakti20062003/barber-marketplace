@@ -3,6 +3,7 @@ import { apiFetch } from '@/lib/api';
 import type { SearchResponse } from '@/lib/types';
 import BusinessCard from '@/components/BusinessCard';
 import SearchBar from '@/components/SearchBar';
+import CompareSection from '@/components/CompareSection';
 
 const FALLBACK_LAT = '19.076';
 const FALLBACK_LNG = '72.8777';
@@ -85,6 +86,8 @@ export default async function Page(props: PageProps<'/'>) {
         <div className="grid gap-3 sm:grid-cols-2">
           {data?.results.map((business) => <BusinessCard key={business.id} business={business} />)}
         </div>
+
+        {data && <CompareSection salons={data.results} />}
       </div>
     </div>
   );

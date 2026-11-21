@@ -31,3 +31,8 @@ export const markNoShowSchema = z.object({
   reasonCode: z.string().min(1).max(200), // owner-supplied, never system-automated (§4.5 AC)
 });
 export type MarkNoShowDto = z.infer<typeof markNoShowSchema>;
+
+export const addServicesSchema = z.object({
+  serviceIds: z.array(z.string().uuid()).min(1).max(10),
+});
+export type AddServicesDto = z.infer<typeof addServicesSchema>;
