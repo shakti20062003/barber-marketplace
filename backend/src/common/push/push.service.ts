@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { generateVapidKeys, sendWebPush, type VapidKeys } from './web-push.js';
+import { isAllowedPushEndpoint } from './push-endpoint.js';
 
 export interface PushMessage {
   title: string;
@@ -82,7 +83,10 @@ export class PushService {
 
   /** Sends to every device of a user; returns how many accepted it. */
   async sendToUser(userId: string, message: PushMessage): Promise<number> {
-    const subs = await this.prisma.pushSubscription.findMany({ where: { userId } });
+    // Defence in depth: never POST to anything but a known push service.
+    const subs = (await this.prisma.pushSubscription.findMany({ where: { userId } })).filter((s) =>
+      isAllowedPushEndpoint(s.endpoint),
+    );
     if (subs.length === 0) return 0;
     const keys = await this.vapidKeys();
     let delivered = 0;

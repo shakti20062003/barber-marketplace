@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { RateLimit } from '../../common/rate-limit/rate-limit.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import { BusinessesService } from './businesses.service.js';
@@ -24,6 +25,7 @@ export class OwnerBusinessesController {
     return this.businesses.findByOwner(user.id);
   }
 
+  @RateLimit({ name: 'owner-create-business', limit: 5, windowSeconds: 86400, by: 'user' })
   @Post('businesses')
   create(
     @CurrentUser() user: AuthenticatedUser,
@@ -89,6 +91,7 @@ export class OwnerBusinessesController {
     return this.businesses.findForOwner(id, user.id);
   }
 
+  @RateLimit({ name: 'owner-media', limit: 40, windowSeconds: 3600, by: 'user' })
   @Post('businesses/:id/media')
   addMedia(
     @CurrentUser() user: AuthenticatedUser,

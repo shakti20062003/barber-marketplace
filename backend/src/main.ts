@@ -15,6 +15,17 @@ async function bootstrap() {
   const config = app.get(ConfigService);
 
   app.setGlobalPrefix('api');
+  // Baseline security headers (helmet isn't used: no new npm deps — see the
+  // lockfile gotcha). The API only serves JSON, so it can be strict.
+  app.disable('x-powered-by');
+  app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    next();
+  });
   // WEB_APP_URL may be a comma-separated list (e.g. deployed web URL + localhost).
   // WEB_APP_URL_PATTERN optionally allows a regex of origins too (e.g. Render's
   // suffixed service URLs, which aren't known until the service is created).

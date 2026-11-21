@@ -20,6 +20,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { REDIS_CLIENT } from '../../common/redis/redis.constants.js';
 import { PushService } from '../../common/push/push.service.js';
+import { RateLimit } from '../../common/rate-limit/rate-limit.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 
@@ -247,6 +248,7 @@ export class CallsController {
   }
 
   @Post()
+  @RateLimit({ name: 'call-start', limit: 6, windowSeconds: 600, by: 'user' })
   start(@CurrentUser() user: AuthenticatedUser, @Body(new ZodValidationPipe(startSchema)) dto: StartDto) {
     return this.calls.start(user.id, dto.bookingId);
   }

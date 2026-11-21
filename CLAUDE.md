@@ -60,7 +60,7 @@ hitting problems:
   `EBADENGINE` wanting Node 22 — harmless so far, everything still installs
   and runs. If something starts actually failing, that's the first thing
   to check.
-- **Next.js 16.3.4** (frontend) — genuinely different from Next 15 in
+- **Next.js 16.4.6** (frontend; upgraded from 16.3.4 for a security advisory) — genuinely different from Next 15 in
   places. It ships its own docs at
   `frontend/node_modules/next/dist/docs/` and a repo `frontend/AGENTS.md`
   that says to read them before writing App Router code — do that for
@@ -323,6 +323,10 @@ actually resolves through the workspace symlink.
   wider than the phone, which looked like the page "opening zoomed in"
   (fixed 2026-11-21). To test, render a page in a 390px iframe and compare
   `document.documentElement.scrollWidth` to `clientWidth`.
+- `next.config.ts` sets `experimental.staleTimes.dynamic = 60` so
+  switching tabs doesn't refetch and re-render dynamic pages (it caused photos
+  to flash). On `/account` both booking lists stay mounted and are toggled with
+  `hidden` for the same reason.
 - Images are plain `<img>` tags (with the `@next/next/no-img-element`
   lint rule disabled inline), not `next/image` — consistent with the
   existing `BusinessCard`/salon-profile code, and avoids needing a
@@ -353,6 +357,12 @@ actually resolves through the workspace symlink.
   percentages** (founder decision): bands only (Great ≥ 88 / Good ≥ 78 /
   May not suit), and say the final choice is the customer's. No paid AI
   for this feature for now.
+- **Security controls** (see DEVELOPER-GUIDE §10b; keep them): push
+  endpoints allow-listed (SSRF), **email is never user-editable** (only set
+  from Google), Redis rate limiting via `@RateLimit(...)` + global per-IP
+  guard (`common/rate-limit`), booking caps (5 upcoming, 2 per salon per day),
+  https-only images, security headers in `next.config.ts` / `main.ts`.
+  `PUSH_ALLOW_ANY_ENDPOINT=true` is test-only.
 - **Web push** (`common/push`, global `PushService`): hand-written with
   Node crypto (VAPID + RFC 8291 aes128gcm, unit-tested against the RFC
   vector). **Don't add the `web-push` npm package** (lockfile gotcha).

@@ -4,6 +4,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import { BookingsService } from './bookings.service.js';
+import { RateLimit } from '../../common/rate-limit/rate-limit.js';
 import {
   addServicesSchema,
   cancelBookingSchema,
@@ -31,6 +32,7 @@ export class BookingsController {
 
   @Post()
   @Roles('CUSTOMER')
+  @RateLimit({ name: 'booking-create', limit: 10, windowSeconds: 3600, by: 'user' })
   create(
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(createBookingSchema)) dto: CreateBookingDto,
@@ -49,6 +51,7 @@ export class BookingsController {
 
   @Post(':id/reschedule')
   @Roles('CUSTOMER')
+  @RateLimit({ name: 'booking-reschedule', limit: 10, windowSeconds: 3600, by: 'user' })
   reschedule(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -59,6 +62,8 @@ export class BookingsController {
 
   @Post(':id/complete')
   @Roles('OWNER', 'STAFF')
+  // Guessing the 6-digit code: 10 tries per 10 minutes per account.
+  @RateLimit({ name: 'booking-complete', limit: 10, windowSeconds: 600, by: 'user' })
   complete(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -75,6 +80,7 @@ export class BookingsController {
 
   @Post(':id/add-services')
   @Roles('CUSTOMER')
+  @RateLimit({ name: 'booking-addons', limit: 20, windowSeconds: 3600, by: 'user' })
   addServices(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,

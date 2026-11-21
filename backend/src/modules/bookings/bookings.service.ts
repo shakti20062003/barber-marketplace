@@ -35,6 +35,10 @@ import type {
 const DEFAULT_FREE_CANCELLATION_HOURS = 2; // §4.3 platform default
 const NO_SHOW_ROLLING_WINDOW_DAYS = 90; // §4.5 / ADR-005
 const NO_SHOW_PREPAYMENT_THRESHOLD = 2; // §4.5
+// Anti-squatting: pay-at-shop costs nothing up front, so without caps one
+// account could block a salon's whole day.
+const MAX_UPCOMING_BOOKINGS_PER_CUSTOMER = 5;
+const MAX_BOOKINGS_PER_SALON_PER_DAY = 2;
 
 /**
  * Razorpay order creation is still a stub (see TODO in create()): a PAY_NOW
@@ -184,6 +188,29 @@ export class BookingsService {
       throw new BadRequestException('slotStart must be in the future');
     }
     const slotEnd = new Date(slotStart.getTime() + service.durationMinutes * 60_000);
+
+    const upcoming = await this.prisma.booking.count({
+      where: { customerId, status: { in: ['PENDING', 'CONFIRMED'] }, slotStart: { gt: new Date() } },
+    });
+    if (upcoming >= MAX_UPCOMING_BOOKINGS_PER_CUSTOMER) {
+      throw new BadRequestException(
+        `You already have ${upcoming} upcoming bookings. Please complete or cancel one before booking another.`,
+      );
+    }
+    const dayStart = startOfLocalDay(slotStart);
+    const sameSalonSameDay = await this.prisma.booking.count({
+      where: {
+        customerId,
+        businessId: dto.businessId,
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        slotStart: { gte: dayStart, lt: new Date(dayStart.getTime() + 86_400_000) },
+      },
+    });
+    if (sameSalonSameDay >= MAX_BOOKINGS_PER_SALON_PER_DAY) {
+      throw new BadRequestException(
+        'You already have 2 bookings at this salon that day. Add services to an existing booking instead.',
+      );
+    }
 
     // §4.5: a flagged customer loses the pay-at-shop option until their
     // reliability score recovers — reversible, never a permanent ban.

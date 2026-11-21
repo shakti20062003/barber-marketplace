@@ -41,7 +41,7 @@ item in the PRD.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | **Next.js 16.3** (App Router, Turbopack), React 19, Tailwind CSS v4 | Next 16 differs from 15. Read `frontend/node_modules/next/dist/docs/` before nontrivial App Router work. |
+| Frontend | **Next.js 16.4.6** (App Router, Turbopack), React 19, Tailwind CSS v4 | Next 16 differs from 15. Read `frontend/node_modules/next/dist/docs/` before nontrivial App Router work. |
 | Backend | **NestJS 12** on Node 20 (ESM) | Uses **vitest** and **oxlint** (Nest 12 defaults), not jest/eslint. |
 | Database | **PostgreSQL 16** via **Prisma 6.19.3** | Pinned to 6.x on purpose; 7+/8 change the config style. Don't bump casually. |
 | Cache / locks | **Redis 7** (ioredis) | OTP storage + rate limits, slot-hold locks. |
@@ -670,6 +670,41 @@ by `prisma migrate deploy` during the backend build.
 
 ---
 
+## 10b. Security (pre-launch review, 2026-11-21)
+
+Controls in place. **Keep them when changing code.**
+
+| Area | Control | Where |
+|---|---|---|
+| Login | Google ID tokens verified (signature, `aud`, `iss`, `exp`, `email_verified`); phone OTP switched off in production (`PHONE_LOGIN=off`) because there's no SMS (the code would be shown on screen) | `modules/auth` |
+| Accounts | Unique Google account / phone / email per user. **Email is only ever set from Google, never typed in.** That prevents pre-claiming a victim's email and capturing their later Google sign-in | `users.controller.ts` |
+| Authorisation | Every route needs a JWT unless `@Public()`; roles via `@Roles`; every owner/customer action re-checks ownership (booking, salon, service, staff, call) | guards + services |
+| SSRF | Push endpoints must be https on a real push service (FCM, Mozilla, Apple, Windows), checked at subscribe **and** send time. `PUSH_ALLOW_ANY_ENDPOINT=true` is a **test-only** escape hatch; never set it on Render | `common/push/push-endpoint.ts` |
+| Abuse | Redis rate limits: 300 req/min per IP globally, plus per-route limits (sign-in, booking, reschedule, completion-code guessing, calls, push tests, uploads, reviews, profile). Fails open if Redis is down | `common/rate-limit` |
+| Slot squatting | Max 5 upcoming bookings per customer, max 2 per salon per day | `bookings.service.ts` |
+| Input | Zod on every body/query; images must be https or uploaded JPEG/PNG/WebP/GIF data URLs (no `http:`, no SVG, no `javascript:`); size caps; JSON body ≤ 3 MB | `common/validation`, `main.ts` |
+| Data exposure | Owners never get customer phone numbers; calls are in-app; `googleSub` never leaves the API; unexpected errors return a generic message | various |
+| Payments webhook | HMAC signature verified with timing-safe compare; rejected if the secret is unset | `payments.service.ts` |
+| Headers | Web: X-Frame-Options DENY, nosniff, Referrer-Policy, HSTS, Permissions-Policy (mic/camera/location self only). API: same plus `CSP: default-src 'none'`, no X-Powered-By | `next.config.ts`, `main.ts` |
+| SQL injection | Prisma only, no raw SQL | — |
+| XSS | React escaping; no `dangerouslySetInnerHTML` / `innerHTML` | — |
+
+**Accepted / remaining risks:**
+- `npm audit`: 5 "high" left. They're in the Prisma **CLI** tooling
+  (`@prisma/config` → `effect`, `deepmerge-ts`; only run during migrations,
+  not reachable from requests) and `zod` (memory use on huge constrained
+  arrays; mitigated by the 3 MB body cap and `.max()` on every array). The fixes
+  need major upgrades (Prisma 7+, Zod 4); plan them deliberately. The Next.js
+  critical advisory was fixed by upgrading to **16.4.6**.
+- Login token in `localStorage` (7-day JWT): XSS could steal it. React's
+  escaping and the absence of HTML injection points make that unlikely;
+  moving to httpOnly cookies + CSRF protection is a future hardening step.
+- No Content-Security-Policy on the web app yet (Next.js inline scripts need
+  nonces); the API has a strict one.
+- Rate-limit client IP = `CF-Connecting-IP`, else the right-most
+  `X-Forwarded-For` hop (Render/Cloudflare). Can't be verified locally.
+- Phone numbers added on the profile are unverified until SMS exists.
+
 ## 11. Known gaps (what's not done yet)
 
 | Area | Status | To finish |
@@ -722,6 +757,7 @@ Search for `TODO` in `backend/src` to see every stubbed call site.
 | 2026-11-21 | Owner setting "accept bookings until X min before closing" |
 | 2026-11-21 | Fixed booking page rendering wider than the phone screen ("opens zoomed in") |
 | 2026-11-21 | Hours list in Mon→Sun order (no overflow); owner hours editor with late closing + breaks; search radius picker; "Featured salons in your area" + achievements; **Style Finder** |
+| 2026-11-21 | **Security review**: SSRF (push endpoints), email pre-claim takeover, rate limiting, anti-squatting, https-only images, security headers, Next 16.4.6; account tabs + tab-switch photo flash fixed |
 | 2026-11-21 | **Sign in with Google** (+ phone-login kill switch, unique phone/Google per account, Connect Google); **free in-app calling** (WebRTC rung by push) |
 | 2026-11-21 | Style Finder: remembered Men/Women/All view; owner **push notifications** + upcoming list; customer **Change time**; Free/Busy/Crowded/Full crowd levels |
 | 2026-11-21 | "Near me" location is remembered (cookie) across Home/Search/tab switches |

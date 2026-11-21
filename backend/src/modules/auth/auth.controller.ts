@@ -5,6 +5,7 @@ import { Public } from '../../common/decorators/public.decorator.js';
 import type { AuthenticatedUser } from './strategies/jwt.strategy.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { AuthService } from './auth.service.js';
+import { RateLimit } from '../../common/rate-limit/rate-limit.js';
 import { sendOtpSchema, verifyOtpSchema, type SendOtpDto, type VerifyOtpDto } from './dto/otp.dto.js';
 
 const googleLoginSchema = z.object({
@@ -29,24 +30,28 @@ export class AuthController {
   }
 
   @Public()
+  @RateLimit({ name: 'auth-google', limit: 20, windowSeconds: 600, by: 'ip' })
   @Post('google')
   google(@Body(new ZodValidationPipe(googleLoginSchema)) dto: GoogleLoginDto) {
     return this.auth.googleLogin(dto.credential, dto.role);
   }
 
   /** Signed-in user attaches a Google account (keeps their data when phone login is turned off). */
+  @RateLimit({ name: 'auth-google-link', limit: 10, windowSeconds: 600, by: 'user' })
   @Post('google/link')
   linkGoogle(@CurrentUser() user: AuthenticatedUser, @Body(new ZodValidationPipe(googleLinkSchema)) dto: GoogleLinkDto) {
     return this.auth.linkGoogle(user.id, dto.credential);
   }
 
   @Public()
+  @RateLimit({ name: 'otp-send-ip', limit: 10, windowSeconds: 600, by: 'ip' })
   @Post('otp/send')
   send(@Body(new ZodValidationPipe(sendOtpSchema)) dto: SendOtpDto) {
     return this.auth.sendOtp(dto);
   }
 
   @Public()
+  @RateLimit({ name: 'otp-verify-ip', limit: 30, windowSeconds: 600, by: 'ip' })
   @Post('otp/verify')
   verify(@Body(new ZodValidationPipe(verifyOtpSchema)) dto: VerifyOtpDto) {
     return this.auth.verifyOtp(dto);

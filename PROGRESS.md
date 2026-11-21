@@ -650,3 +650,28 @@ Founder can't pay for SMS or telephony yet. Agreed:
 - Not done (founder must do): create the Google OAuth client id and set
   `GOOGLE_CLIENT_ID` (+ `ADMIN_EMAILS`) on Render; link Google to existing
   phone accounts; then set `PHONE_LOGIN=off`.
+
+## 2026-11-21 — Polish + pre-launch security review (in progress)
+
+Founder confirmed Google login and in-app calls work on real phones.
+1. Account page: show the notifications + "Your account" cards only on the
+   Upcoming tab.
+2. Switching tabs re-loads photos every time (flash) — fix.
+3. Security review before publishing — find and fix vulnerabilities.
+
+### Done (polish + security review, 2026-11-21)
+
+- Account page: notifications and "Your account" cards only on Upcoming; both
+  lists stay mounted (hidden), so photos don't reload on tab switches.
+  Verified: 25 past-booking images were the same DOM nodes across switches.
+- Tab-switch flash: `staleTimes.dynamic = 60`. Verified: Home → Styles →
+  Home ×2 made 0 new server requests and images were already loaded.
+- Security review fixes (each attacked in `security-e2e`, all blocked):
+  SSRF via push endpoints (6 attack URLs → 400), email pre-claim takeover
+  (email no longer editable), rate limiting (completion-code guessing and
+  Google sign-in floods → 429), slot squatting caps (5 upcoming; 2 per salon
+  per day), https-only images (http/javascript/SVG rejected), API + web
+  security headers, Next 16.3.4 → 16.4.6 (critical advisory; lockfile updated
+  in a clean dir from the existing one, 51-line diff, Linux binaries intact).
+- Regression: push e2e (15), login+calls e2e (22), original e2e (22) and
+  31 unit tests all pass.

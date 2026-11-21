@@ -14,6 +14,8 @@ export const imageUrlSchema = z
   .string()
   .max(MAX_IMAGE_URL_LENGTH, 'Image is too large — try a smaller photo')
   .refine(
-    (v) => /^https?:\/\/\S+$/i.test(v) || /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v),
-    'Must be an image URL or an uploaded image',
+    // https only: a plain-http image would be blocked as mixed content, and an
+    // image on someone's own server lets them log every viewer's IP address.
+    (v) => /^https:\/\/\S+$/i.test(v) || /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v),
+    'Must be an https image link or an uploaded image',
   );

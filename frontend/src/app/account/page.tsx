@@ -485,7 +485,6 @@ export default function AccountPage() {
     .filter((b) => UPCOMING_STATUSES.has(b.status))
     .sort((a, b) => new Date(a.slotStart).getTime() - new Date(b.slotStart).getTime());
   const past = bookings.filter((b) => !UPCOMING_STATUSES.has(b.status));
-  const visible = tab === 'upcoming' ? upcoming : past;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -556,31 +555,44 @@ export default function AccountPage() {
           </button>
         </div>
 
-        <div className="mt-4 space-y-3">
-          {visible.map((b) => (
-            <BookingCard key={b.id} booking={b} onChange={reload} />
-          ))}
-          {visible.length === 0 && (
-            <div className="flex flex-col items-center rounded-2xl border border-border bg-surface py-10 text-center">
-              <span className="text-3xl">{tab === 'upcoming' ? '📅' : '🕘'}</span>
-              <p className="mt-2 text-sm font-medium text-foreground">
-                {tab === 'upcoming' ? 'No upcoming bookings' : 'No past bookings yet'}
-              </p>
-              <p className="mt-0.5 text-sm text-muted">
-                {tab === 'upcoming' ? "You're all free — go treat yourself." : 'Your visit history will show up here.'}
-              </p>
-              <Link
-                href="/"
-                className="mt-4 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-brand-foreground"
-              >
-                Find a salon
-              </Link>
-            </div>
-          )}
-        </div>
+        {/* Both lists stay mounted and are only hidden, so switching tabs
+            doesn't re-create the cards and re-load their photos. */}
+        {(
+          [
+            ['upcoming', upcoming],
+            ['past', past],
+          ] as const
+        ).map(([key, list]) => (
+          <div key={key} className={`mt-4 space-y-3 ${tab === key ? '' : 'hidden'}`}>
+            {list.map((b) => (
+              <BookingCard key={b.id} booking={b} onChange={reload} />
+            ))}
+            {list.length === 0 && (
+              <div className="flex flex-col items-center rounded-2xl border border-border bg-surface py-10 text-center">
+                <span className="text-3xl">{key === 'upcoming' ? '📅' : '🕘'}</span>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {key === 'upcoming' ? 'No upcoming bookings' : 'No past bookings yet'}
+                </p>
+                <p className="mt-0.5 text-sm text-muted">
+                  {key === 'upcoming' ? "You're all free — go treat yourself." : 'Your visit history will show up here.'}
+                </p>
+                <Link
+                  href="/"
+                  className="mt-4 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-brand-foreground"
+                >
+                  Find a salon
+                </Link>
+              </div>
+            )}
+          </div>
+        ))}
 
-        <BookingAlerts audience="customer" />
-        <AccountLinks />
+        {/* Settings cards belong with the Upcoming tab only (hidden, not
+            unmounted, so they don't re-fetch on every tab switch). */}
+        <div className={tab === 'upcoming' ? '' : 'hidden'}>
+          <BookingAlerts audience="customer" />
+          <AccountLinks />
+        </div>
 
         <div className="mt-8 border-t border-border pt-4">
           <button

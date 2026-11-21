@@ -5,6 +5,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import { ReviewsService } from './reviews.service.js';
+import { RateLimit } from '../../common/rate-limit/rate-limit.js';
 import { createReviewSchema, type CreateReviewDto } from './dto/create-review.dto.js';
 
 @Controller()
@@ -13,6 +14,7 @@ export class ReviewsController {
 
   @Post('reviews')
   @Roles('CUSTOMER')
+  @RateLimit({ name: 'review-create', limit: 10, windowSeconds: 3600, by: 'user' })
   create(
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(createReviewSchema)) dto: CreateReviewDto,

@@ -5,6 +5,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { imageUrlSchema } from '../../common/validation/image-url.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
+import { RateLimit } from '../../common/rate-limit/rate-limit.js';
 
 /** "98765 43210" / "098765-43210" / "+91 98765 43210" → "+919876543210". */
 function normalizeIndianPhone(raw: string): string | null {
@@ -17,7 +18,10 @@ function normalizeIndianPhone(raw: string): string | null {
 
 const updateMeSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
-  email: z.string().email().optional(),
+  // No `email` here on purpose: email is only ever set from a verified Google
+  // sign-in. If users could type one in, an attacker could pre-claim a
+  // victim's email and the victim's later Google sign-in would be linked
+  // into the attacker's account.
   // null removes the profile picture.
   avatarUrl: imageUrlSchema.nullable().optional(),
   phone: z
@@ -51,6 +55,7 @@ export class UsersController {
   }
 
   @Patch('me')
+  @RateLimit({ name: 'profile-update', limit: 30, windowSeconds: 3600, by: 'user' })
   async updateMe(@CurrentUser() user: AuthenticatedUser, @Body(new ZodValidationPipe(updateMeSchema)) body: UpdateMeDto) {
     // Role is deliberately not editable here (FR-1.2 AC).
     const current = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id } });
@@ -65,17 +70,12 @@ export class UsersController {
       // Can't verify by SMS yet, so a newly entered number is unverified.
       phoneData = { phone: body.phone, phoneVerified: false };
     }
-    if (body.email !== undefined && body.email !== current.email) {
-      const taken = await this.prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-      if (taken && taken.id !== user.id) throw new ConflictException('This email is already used by another Trimly account.');
-    }
 
     try {
       const updated = await this.prisma.user.update({
         where: { id: user.id },
         data: {
           name: body.name,
-          email: body.email?.toLowerCase(),
           avatarUrl: body.avatarUrl,
           ...phoneData,
         },

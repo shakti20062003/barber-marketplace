@@ -20,6 +20,7 @@ import { PaymentsModule } from './modules/payments/payments.module.js';
 import { StylesModule } from './modules/styles/styles.module.js';
 import { PushModule } from './common/push/push.module.js';
 import { CallsModule } from './modules/calls/calls.module.js';
+import { RateLimitGuard } from './common/rate-limit/rate-limit.js';
 
 @Module({
   imports: [
@@ -45,6 +46,8 @@ import { CallsModule } from './modules/calls/calls.module.js';
     // with @Public() (search, profiles, auth, webhooks).
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // After auth so per-user limits can key on the signed-in user.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],
 })

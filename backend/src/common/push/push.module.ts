@@ -5,9 +5,15 @@ import { Public } from '../decorators/public.decorator.js';
 import { ZodValidationPipe } from '../pipes/zod-validation.pipe.js';
 import type { AuthenticatedUser } from '../../modules/auth/strategies/jwt.strategy.js';
 import { PushService } from './push.service.js';
+import { isAllowedPushEndpoint } from './push-endpoint.js';
+import { RateLimit } from '../rate-limit/rate-limit.js';
 
 const subscribeSchema = z.object({
-  endpoint: z.string().url().max(1000),
+  endpoint: z
+    .string()
+    .url()
+    .max(1000)
+    .refine(isAllowedPushEndpoint, 'Unsupported notification service'),
   keys: z.object({ p256dh: z.string().min(20).max(200), auth: z.string().min(8).max(100) }),
 });
 type SubscribeDto = z.infer<typeof subscribeSchema>;
@@ -25,6 +31,7 @@ export class PushController {
     return { publicKey: await this.push.publicKey() };
   }
 
+  @RateLimit({ name: 'push-subscribe', limit: 20, windowSeconds: 3600, by: 'user' })
   @Post('subscribe')
   subscribe(@CurrentUser() user: AuthenticatedUser, @Body(new ZodValidationPipe(subscribeSchema)) dto: SubscribeDto) {
     return this.push.subscribe(user.id, { endpoint: dto.endpoint, p256dh: dto.keys.p256dh, auth: dto.keys.auth });
@@ -41,6 +48,7 @@ export class PushController {
   }
 
   /** "Send me a test notification" button. */
+  @RateLimit({ name: 'push-test', limit: 5, windowSeconds: 600, by: 'user' })
   @Post('test')
   async test(@CurrentUser() user: AuthenticatedUser) {
     const delivered = await this.push.sendToUser(user.id, {
