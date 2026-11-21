@@ -11,6 +11,7 @@ import {
   matchReason,
   preloadFaceModel,
   type FaceAnalysis,
+  type ScanDiagnostics,
 } from '@/lib/faceShape';
 import type { HairStyle } from '@/lib/types';
 
@@ -104,6 +105,7 @@ export default function StyleFinderPage() {
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanTip, setScanTip] = useState<string | null>(null);
+  const [scanDiag, setScanDiag] = useState<ScanDiagnostics | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [sortByMatch, setSortByMatch] = useState(false);
   const [nudge, setNudge] = useState(false);
@@ -124,6 +126,7 @@ export default function StyleFinderPage() {
     if (!file) return;
     setScanning(true);
     setScanError(null);
+    setScanDiag(null);
     setNudge(false);
     try {
       const result = await analyzeFace(file);
@@ -134,6 +137,13 @@ export default function StyleFinderPage() {
       setSortByMatch(true);
     } catch (err) {
       setScanError(err instanceof FaceScanError ? err.message : 'Something went wrong scanning that photo. Please try again.');
+      setScanDiag(err instanceof FaceScanError ? (err.diagnostics ?? null) : { preview: null, details: String(err) });
+      // Don't leave an older photo's result on screen next to the error.
+      setAnalysis(null);
+      setScanTip(null);
+      setRevealed(new Set());
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      setPhotoUrl(null);
     } finally {
       setScanning(false);
     }
@@ -192,7 +202,7 @@ export default function StyleFinderPage() {
           <>
             <p className="font-semibold">{nudge ? '👇 First, scan your face' : '📸 Scan your face'}</p>
             <ul className="mt-1.5 space-y-0.5 text-sm text-muted">
-              <li>• Face the camera straight on, in good light</li>
+              <li>• Hold the phone at arm&apos;s length, face the camera, good light</li>
               <li>• Pull your hair back off your forehead and face</li>
               <li>• Remove glasses; keep a neutral expression</li>
             </ul>
@@ -215,6 +225,19 @@ export default function StyleFinderPage() {
           </>
         )}
         {scanError && <p className="mt-2 rounded-lg bg-red-50 p-2 text-sm text-red-700">{scanError}</p>}
+        {scanError && scanDiag && (
+          <details className="mt-2 rounded-lg border border-border p-2 text-xs text-muted">
+            <summary className="cursor-pointer font-medium">What the scanner saw (for support)</summary>
+            <div className="mt-2 flex gap-2">
+              {scanDiag.preview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={scanDiag.preview} alt="What the scanner analysed" className="h-24 w-auto shrink-0 rounded border border-border" />
+              )}
+              <p className="break-all">{scanDiag.details}</p>
+            </div>
+            <p className="mt-1">If your face looks sideways, upside down or blank here, send us a screenshot of this box.</p>
+          </details>
+        )}
         {analysis && !scanError && scanTip && (
           <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">{scanTip}</p>
         )}

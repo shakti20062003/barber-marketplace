@@ -437,7 +437,13 @@ suits their face.
   with a grey border (close-ups touching the edges), then rotated 90°, 270°
   and 180° (missing or wrong flag). Detector confidence thresholds are 0.3
   (default 0.5). A tip asks for the whole face when the forehead or chin
-  touches the edge, since a cropped face reads rounder. Tested: normal,
+  touches the edge, since a cropped face reads rounder. Two decoders
+  (`createImageBitmap` from-image, then `<img>`) plus a blank-image check
+  (a decode that yields one flat colour gets "couldn't open this photo",
+  not "no face"). Retries: as-is → 25% border → 60% border → 512px + border
+  → rotations. **On failure, a "What the scanner saw" panel** shows the exact
+  image analysed plus device/browser/file/decoder/size/tries. Ask users to
+  screenshot it when a scan fails. Tested: normal,
   phone-style sideways+flag, sideways without flag and tight close-up are all
   detected; a back-of-head photo is rejected.
 - **It's an estimate.** The prototype proportions in `faceShape.ts` are

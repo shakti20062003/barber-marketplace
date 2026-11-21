@@ -555,3 +555,18 @@ service may run past closing.
 - Verified in the browser on the production build with generated test
   photos: normal ✓, sideways+EXIF (phone-style) ✓, sideways without EXIF ✓,
   tight close-up ✓ (+ tip), back of head → correctly rejected.
+
+## 2026-11-21 — Style Finder: still "no face" on the founder's phone
+
+- The second fix was live (new error wording) but the founder's selfie still
+  failed. Could not reproduce on desktop Chrome: normal, phone-style
+  sideways+EXIF, sideways without EXIF and extreme close-ups (face filling or
+  overflowing a 3000px frame) all detected. So it's device/browser-specific
+  (unknown model; suspect iOS Safari decoding).
+- Added: a second decoder (`<img>`) as fallback, a blank-decode check with
+  its own message, more retries (60% border, 512px scale), arm's-length
+  guidance, and a **"What the scanner saw" diagnostics panel** on failure
+  (preview of the analysed image + device/browser/file/decoder/size/tries).
+  A failed scan now clears the previous result.
+- Next step: get a screenshot of the diagnostics panel from the founder's
+  phone to pinpoint the cause.

@@ -66,7 +66,70 @@ export interface FaceAnalysis {
   probabilities: Record<FaceShape, number>;
 }
 
-export class FaceScanError extends Error {}
+/** What the scanner actually looked at — shown when a scan fails, for support. */
+export interface ScanDiagnostics {
+  preview: string | null; // small JPEG data URL of the image given to the detector
+  details: string; // one line: device/browser, file, decoder, sizes, tries
+}
+
+export class FaceScanError extends Error {
+  constructor(
+    message: string,
+    public diagnostics?: ScanDiagnostics,
+  ) {
+    super(message);
+  }
+}
+
+function browserLabel(): string {
+  const ua = navigator.userAgent;
+  const device = /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Other';
+  const browser = /CriOS|Chrome\//.test(ua) && !/Edg\//.test(ua)
+    ? 'Chrome'
+    : /Edg\//.test(ua)
+      ? 'Edge'
+      : /FxiOS|Firefox\//.test(ua)
+        ? 'Firefox'
+        : /SamsungBrowser/.test(ua)
+          ? 'Samsung'
+          : /Safari\//.test(ua)
+            ? 'Safari'
+            : 'Browser';
+  const v = ua.match(/(?:Version|Chrome|CriOS|Firefox|FxiOS|SamsungBrowser)\/(\d+)/)?.[1];
+  return `${device} ${browser}${v ? ' ' + v : ''}`;
+}
+
+/** Small preview of a canvas for the failure panel. */
+function thumb(c: HTMLCanvasElement): string | null {
+  try {
+    const t = document.createElement('canvas');
+    const k = 160 / Math.max(c.width, c.height);
+    t.width = Math.max(1, Math.round(c.width * k));
+    t.height = Math.max(1, Math.round(c.height * k));
+    t.getContext('2d')!.drawImage(c, 0, 0, t.width, t.height);
+    return t.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return null;
+  }
+}
+
+/** True when the decoded picture is (nearly) one flat colour — i.e. the browser failed to decode it. */
+function looksBlank(c: HTMLCanvasElement): boolean {
+  const t = document.createElement('canvas');
+  t.width = 32;
+  t.height = 32;
+  const ctx = t.getContext('2d')!;
+  ctx.drawImage(c, 0, 0, 32, 32);
+  const d = ctx.getImageData(0, 0, 32, 32).data;
+  let min = 255;
+  let max = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = (d[i] + d[i + 1] + d[i + 2]) / 3;
+    min = Math.min(min, v);
+    max = Math.max(max, v);
+  }
+  return max - min < 8;
+}
 
 type Landmark = { x: number; y: number };
 type Landmarker = { detect: (img: HTMLCanvasElement) => { faceLandmarks: Landmark[][] } };
@@ -112,29 +175,41 @@ const MAX_SIDE = 1024;
  * "not found". createImageBitmap(..., { imageOrientation: 'from-image' })
  * applies the flag; also downscales big (12 MP+) photos.
  */
-async function loadUprightCanvas(file: File): Promise<HTMLCanvasElement> {
-  let source: ImageBitmap | HTMLImageElement;
-  try {
-    source = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch {
-    // Older browsers: fall back to an <img>, which also applies EXIF in modern engines.
-    source = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new FaceScanError('Could not read that photo. Try another one.'));
-      img.src = URL.createObjectURL(file);
-    });
-  }
+type Decoder = 'bitmap' | 'img';
+
+async function decode(file: File, decoder: Decoder): Promise<ImageBitmap | HTMLImageElement> {
+  if (decoder === 'bitmap') return createImageBitmap(file, { imageOrientation: 'from-image' });
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('img decode failed'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/**
+ * Decodes the photo *upright* and scales it so the longest side is
+ * `maxSide`. Phones store portraits sideways plus an EXIF "rotate me" flag;
+ * both decoders here apply it in current browsers ('bitmap' via
+ * imageOrientation: 'from-image', 'img' via the browser's default
+ * image-orientation). Two decoders because mobile browsers differ.
+ */
+async function loadUprightCanvas(
+  file: File,
+  decoder: Decoder,
+  maxSide = MAX_SIDE,
+): Promise<{ canvas: HTMLCanvasElement; srcW: number; srcH: number }> {
+  const source = await decode(file, decoder);
   const w = 'naturalWidth' in source ? source.naturalWidth : source.width;
   const h = 'naturalHeight' in source ? source.naturalHeight : source.height;
-  if (!w || !h) throw new FaceScanError('Could not read that photo. Try another one.');
-  const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+  if (!w || !h) throw new Error('empty image');
+  const scale = Math.min(1, maxSide / Math.max(w, h));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(w * scale);
   canvas.height = Math.round(h * scale);
   canvas.getContext('2d')!.drawImage(source, 0, 0, canvas.width, canvas.height);
   if ('close' in source) source.close();
-  return canvas;
+  return { canvas, srcW: w, srcH: h };
 }
 
 /** Same picture with a plain border — helps when a close-up face touches the edges. */
@@ -185,40 +260,77 @@ export function classifyProportions(ratios: [number, number, number]): FaceAnaly
 export async function analyzeFace(
   file: File,
 ): Promise<{ analysis: FaceAnalysis; imageUrl: string; tip: string | null }> {
-  const [landmarker, upright] = await Promise.all([
-    loadLandmarker().catch(() => {
-      throw new FaceScanError('Could not load the face scanner. Check your internet connection and try again.');
-    }),
-    loadUprightCanvas(file),
-  ]);
+  const landmarker = await loadLandmarker().catch(() => {
+    throw new FaceScanError('Could not load the face scanner. Check your internet connection and try again.');
+  });
 
-  // Try the photo as-is first, then progressively more forgiving variants.
-  // `base` = the size the face is judged against (padding shouldn't make a
-  // face look "too small").
-  const attempts: { canvas: HTMLCanvasElement; base: number }[] = [
-    { canvas: upright, base: Math.min(upright.width, upright.height) },
-    { canvas: padded(upright), base: Math.min(upright.width, upright.height) },
-    ...([90, 270, 180] as const).map((deg) => {
-      const r = rotated(upright, deg);
-      return { canvas: padded(r, 0.15), base: Math.min(r.width, r.height) };
-    }),
+  // Decode once per decoder; fall back to the other decoder if one fails.
+  let decoded: { canvas: HTMLCanvasElement; srcW: number; srcH: number; decoder: Decoder } | null = null;
+  const decodeErrors: string[] = [];
+  for (const decoder of ['bitmap', 'img'] as const) {
+    try {
+      const d = await loadUprightCanvas(file, decoder);
+      if (looksBlank(d.canvas)) {
+        decodeErrors.push(`${decoder}:blank`);
+        continue;
+      }
+      decoded = { ...d, decoder };
+      break;
+    } catch (err) {
+      decodeErrors.push(`${decoder}:${err instanceof Error ? err.message : 'error'}`);
+    }
+  }
+  const fileInfo = `${file.type || 'unknown type'} ${Math.round(file.size / 1024)} KB`;
+  if (!decoded) {
+    throw new FaceScanError(
+      "Your phone's browser couldn't open this photo. Try “Take a selfie” instead, or a different photo.",
+      { preview: null, details: `${browserLabel()} · ${fileInfo} · ${decodeErrors.join(', ')}` },
+    );
+  }
+
+  const upright = decoded.canvas;
+  const base = Math.min(upright.width, upright.height);
+  const small = await loadUprightCanvas(file, decoded.decoder, 512).then((d) => d.canvas).catch(() => upright);
+
+  // Try the photo as-is first, then progressively more forgiving variants:
+  // a border (close-ups touching the edges), a smaller scale, and rotations
+  // (missing/wrong orientation flag). `base` = size the face is judged against.
+  const attempts: { label: string; canvas: () => HTMLCanvasElement; base: number }[] = [
+    { label: 'as-is', canvas: () => upright, base },
+    { label: 'pad25', canvas: () => padded(upright, 0.25), base },
+    { label: 'pad60', canvas: () => padded(upright, 0.6), base },
+    { label: 'small-pad25', canvas: () => padded(small, 0.25), base: Math.min(small.width, small.height) },
+    ...([90, 270, 180] as const).map((deg) => ({
+      label: `rot${deg}`,
+      canvas: () => padded(rotated(upright, deg), 0.25),
+      base,
+    })),
   ];
 
   let found: { faces: Landmark[][]; canvas: HTMLCanvasElement; base: number; index: number } | null = null;
+  let tries = 0;
   for (const [index, attempt] of attempts.entries()) {
-    const faces = landmarker.detect(attempt.canvas).faceLandmarks;
+    const canvas = attempt.canvas();
+    tries++;
+    const faces = landmarker.detect(canvas).faceLandmarks;
     if (faces.length > 0) {
-      found = { faces, ...attempt, index };
+      found = { faces, canvas, base: attempt.base, index };
       break;
     }
   }
 
+  const diagnostics: ScanDiagnostics = {
+    preview: thumb(upright),
+    details: `${browserLabel()} · ${fileInfo} · ${decoded.srcW}×${decoded.srcH} → ${upright.width}×${upright.height} via ${decoded.decoder}${decodeErrors.length ? ' (' + decodeErrors.join(', ') + ')' : ''} · ${tries} tries`,
+  };
+
   if (!found) {
     throw new FaceScanError(
-      "We couldn't find a face. Make sure your whole face (forehead to chin) is in the photo, facing the camera, in good light.",
+      "We couldn't find a face. Hold the phone at arm's length so your whole face (forehead to chin) is in the photo, facing the camera, in good light.",
+      diagnostics,
     );
   }
-  if (found.faces.length > 1) throw new FaceScanError('Please use a photo with just you in it.');
+  if (found.faces.length > 1) throw new FaceScanError('Please use a photo with just you in it.', diagnostics);
 
   const w = found.canvas.width;
   const h = found.canvas.height;
@@ -228,13 +340,13 @@ export async function analyzeFace(
 
   const cheek = dist(LM.cheekL, LM.cheekR);
   if (cheek < found.base * 0.15) {
-    throw new FaceScanError('Your face is too small in the photo — move closer so it fills most of the frame.');
+    throw new FaceScanError('Your face is too small in the photo — move closer so it fills most of the frame.', diagnostics);
   }
   // Turned head: the nose sits far closer to one cheek than the other.
   const left = Math.hypot(p(LM.nose).x - p(LM.cheekL).x, p(LM.nose).y - p(LM.cheekL).y);
   const right = Math.hypot(p(LM.cheekR).x - p(LM.nose).x, p(LM.cheekR).y - p(LM.nose).y);
   if (Math.min(left, right) / Math.max(left, right) < 0.55) {
-    throw new FaceScanError('Please look straight at the camera, not to the side.');
+    throw new FaceScanError('Please look straight at the camera, not to the side.', diagnostics);
   }
 
   const analysis = classifyProportions([
@@ -250,7 +362,7 @@ export async function analyzeFace(
     found.index === 0 &&
     [LM.top, LM.chin, LM.cheekL, LM.cheekR].some((i) => face[i].y < 0.03 || face[i].y > 0.97 || face[i].x < 0.02 || face[i].x > 0.98);
   const tip =
-    found.index === 1 || atEdge
+    (found.index >= 1 && found.index <= 3) || atEdge
       ? 'Tip: for the most accurate result, keep your whole face — forehead to chin — inside the frame.'
       : null;
   // Preview: the browser shows the original file upright on its own.
