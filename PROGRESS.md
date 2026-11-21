@@ -354,3 +354,8 @@ a phone, then click through the full flow in a browser to find bugs.
 - The deploy is still `NODE_ENV=development` on purpose, so the OTP comes
   back as `devOtp` in the API response (no SMS provider yet).
 - Production builds of both apps checked locally before pushing.
+- First Render deploy of `trimly-web` failed: `Cannot find module
+  '../lightningcss.linux-x64-gnu.node'`. Root `package-lock.json` (generated
+  on Windows) only recorded win32 native binaries (npm optional-deps bug).
+  Regenerated it from scratch in a clean directory so all platform binaries
+  are listed; both builds + backend tests re-verified.

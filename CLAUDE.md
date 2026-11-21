@@ -288,6 +288,15 @@ so `devOtp` is returned until SMS delivery exists; switch to `production`
 once MSG91/Gupshup is wired up. Free-tier services sleep when idle, so the
 first request can take ~1 min.
 
+**Lockfile gotcha:** the root `package-lock.json` must list Linux native
+binaries (`lightningcss-linux-x64-gnu`, `@tailwindcss/oxide-linux-x64-gnu`,
+`@next/swc-linux-x64-gnu`) or the Render build fails. npm on Windows can
+silently prune them. Running `npm install --package-lock-only` here does NOT
+fix it (it reuses the installed tree); regenerate by copying the root +
+workspace `package.json` files to an empty directory, running
+`npm install --package-lock-only` there with no lockfile, and copying the
+result back. Check with `grep linux-x64-gnu package-lock.json`.
+
 ## Local dev
 
 See `README.md` for the actual commands (Docker Compose up, env file
