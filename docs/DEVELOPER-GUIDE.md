@@ -349,6 +349,15 @@ The `CLOUDINARY_*` env vars already exist.
 
 ### 7.5 Location and maps
 
+**Customer search location.** "Near me" saves the coordinates in a
+`trimly_loc` cookie (30 days, `lib/location.ts`). Home and Search are server
+components and resolve the location with `resolveSearchLocation()`
+(`lib/location-server.ts`): an explicit `?lat=&lng=` in the URL wins, then the
+saved cookie, then Mumbai. Don't inject fallback coordinates into the URL
+from the client: that used to override the saved location (and the Home tab
+links to plain `/`, which used to forget it).
+
+
 The owner sets the exact location under Manage → Location: "Use my current
 location" (browser GPS) or a pasted full Google Maps link, plus an address /
 landmark. Customers see an **OpenStreetMap embed** and a **Google Maps
@@ -505,4 +514,5 @@ Search for `TODO` in `backend/src` to see every stubbed call site.
 | 2026-11-21 | Founder phone-test fixes: IST timezone (slots started at 2:30 PM), salon-hours clipping (closed salons were bookable), 10-min late grace + owner check-in/no-show, busy-colour slots, confirmation code under Upcoming, add-on services, masked calling (Exotel), clickable admin lists, device photo uploads + profile pictures, salon location + map/directions, **Compare salons**; security fix for cross-salon service/staff edits; online payment disabled until live |
 | 2026-11-21 | Owner setting "accept bookings until X min before closing" |
 | 2026-11-21 | Fixed booking page rendering wider than the phone screen ("opens zoomed in") |
+| 2026-11-21 | "Near me" location is remembered (cookie) across Home/Search/tab switches |
 | 2026-11-21 | Owner Manage buttons no longer share one busy state; call-button feedback is a toast; review form closes with a confirmation and shows the submitted review |

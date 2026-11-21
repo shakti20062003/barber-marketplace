@@ -480,3 +480,16 @@ service may run past closing.
   `review {rating, text}`); an "already reviewed" response is treated as
   success. Verified against the local API (submit 201, repeat 400, the
   booking then carries the review).
+
+## 2026-11-21 — "Near me" forgotten after switching tabs
+
+- Bug: "Near me" put coordinates only in the URL; the Home tab links to plain
+  `/`, so returning to Home showed Mumbai salons again. Also, tapping a
+  category/filter injected Mumbai coordinates into the URL when none were
+  present. Fix: "Near me" saves a `trimly_loc` cookie (30 days); Home and
+  Search resolve URL → saved cookie → Mumbai fallback server-side
+  (`lib/location-server.ts`); SearchBar no longer injects fallback
+  coordinates. Home shows "📍 Near your location" or "Showing Mumbai · tap
+  Near me". Verified on the production build with cookies: plain `/` and
+  `/search` with a saved Bangalore location list Bangalore salons; no or
+  invalid cookie → Mumbai; an explicit URL location wins.

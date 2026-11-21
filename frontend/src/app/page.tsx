@@ -5,14 +5,14 @@ import BusinessCard from '@/components/BusinessCard';
 import SearchBar from '@/components/SearchBar';
 import CompareSection from '@/components/CompareSection';
 
-const FALLBACK_LAT = '19.076';
-const FALLBACK_LNG = '72.8777';
+import { resolveSearchLocation } from '@/lib/location-server';
 
 export default async function Page(props: PageProps<'/'>) {
   const sp = await props.searchParams;
+  const location = await resolveSearchLocation(sp);
   const params = new URLSearchParams();
-  params.set('lat', (sp.lat as string) ?? FALLBACK_LAT);
-  params.set('lng', (sp.lng as string) ?? FALLBACK_LNG);
+  params.set('lat', location.lat);
+  params.set('lng', location.lng);
   if (sp.category) params.set('category', sp.category as string);
   if (sp.openNow) params.set('openNow', sp.openNow as string);
   params.set('limit', '6');
@@ -56,7 +56,12 @@ export default async function Page(props: PageProps<'/'>) {
 
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Nearby salons</h2>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">Nearby salons</h2>
+            <p className="truncate text-xs text-muted">
+              {location.source === 'fallback' ? 'Showing Mumbai · tap 📍 Near me for salons around you' : '📍 Near your location'}
+            </p>
+          </div>
           <Link
             href={`/search?${exploreParams.toString()}`}
             className="shrink-0 rounded-full bg-brand-tint px-3.5 py-1.5 text-sm font-semibold text-brand-dark"

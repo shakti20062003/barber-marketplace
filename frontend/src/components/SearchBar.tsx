@@ -2,12 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-
-// Default fallback coordinates so the page still renders results before a
-// user grants location — mirrors the PRD's "manual address entry fallback"
-// requirement for the location-permission-denied drop-off risk (§3.1).
-const FALLBACK_LAT = 19.076;
-const FALLBACK_LNG = 72.8777;
+import { saveLocation } from '@/lib/location';
 
 const CATEGORIES = [
   { value: '', label: 'All', emoji: '✨' },
@@ -35,9 +30,10 @@ export default function SearchBar({
   const openNow = searchParams.get('openNow') === 'true';
 
   function applyParams(overrides: Record<string, string | null>) {
+    // No lat/lng injected here: when the URL has none, the page uses the
+    // location saved by "Near me" (cookie) or the Mumbai fallback. Injecting
+    // Mumbai here used to override a saved location as soon as a filter was tapped.
     const params = new URLSearchParams(searchParams.toString());
-    if (!params.get('lat')) params.set('lat', String(FALLBACK_LAT));
-    if (!params.get('lng')) params.set('lng', String(FALLBACK_LNG));
     for (const [key, value] of Object.entries(overrides)) {
       if (value === null || value === '') params.delete(key);
       else params.set(key, value);
@@ -54,12 +50,13 @@ export default function SearchBar({
     setLocationError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        saveLocation(pos.coords.latitude, pos.coords.longitude);
         applyParams({ lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) });
         setLocating(false);
       },
       () => {
         setLocating(false);
-        setLocationError('Location permission denied — showing Mumbai results instead.');
+        setLocationError('Could not get your location. Allow location access in your browser and tap Near me again.');
       },
       { timeout: 8000 },
     );

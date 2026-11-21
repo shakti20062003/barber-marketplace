@@ -3,14 +3,14 @@ import type { SearchResponse } from '@/lib/types';
 import SearchBar from '@/components/SearchBar';
 import BusinessCard from '@/components/BusinessCard';
 
-const FALLBACK_LAT = '19.076';
-const FALLBACK_LNG = '72.8777';
+import { resolveSearchLocation } from '@/lib/location-server';
 
 export default async function SearchPage(props: PageProps<'/search'>) {
   const sp = await props.searchParams;
+  const location = await resolveSearchLocation(sp);
   const params = new URLSearchParams();
-  params.set('lat', (sp.lat as string) ?? FALLBACK_LAT);
-  params.set('lng', (sp.lng as string) ?? FALLBACK_LNG);
+  params.set('lat', location.lat);
+  params.set('lng', location.lng);
   if (sp.category) params.set('category', sp.category as string);
   if (sp.openNow) params.set('openNow', sp.openNow as string);
   if (sp.q) params.set('q', sp.q as string);
