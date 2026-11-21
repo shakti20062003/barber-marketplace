@@ -469,3 +469,14 @@ service may run past closing.
   squashed the neighbouring content. Fix: `CallButton` now shows feedback
   as a fixed-position toast (above the mobile tab bar, auto-dismiss 4s,
   tap to close) and the button itself has a fixed size (`shrink-0`).
+
+## 2026-11-21 — Review submission had no confirmation
+
+- Bug: after submitting a review the form stayed open with no success
+  message, so the customer tapped Submit again and got "This booking has
+  already been reviewed" (the first submit had worked). Fix: the form
+  closes on success with "✓ Thanks! Your review has been posted."; reviewed
+  bookings show "Your review ★★★★☆ + text" (`GET /bookings/me` now returns
+  `review {rating, text}`); an "already reviewed" response is treated as
+  success. Verified against the local API (submit 201, repeat 400, the
+  booking then carries the review).

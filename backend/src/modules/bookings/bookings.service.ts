@@ -246,7 +246,7 @@ export class BookingsService {
         },
         service: { select: { name: true, price: true, durationMinutes: true } },
         staff: { select: { name: true } },
-        review: { select: { id: true } },
+        review: { select: { id: true, rating: true, text: true } },
         payment: { select: { amount: true } },
         addOns: { include: { service: { select: { name: true } } }, orderBy: { createdAt: 'asc' } },
       },
@@ -275,6 +275,7 @@ export class BookingsService {
       totalAmount: b.payment?.amount ?? b.service.price,
       staff: b.staff ? { name: b.staff.name } : null,
       hasReview: b.review != null,
+      review: b.review ? { rating: b.review.rating, text: b.review.text } : null,
       // Only while the code is still useful (before the visit is done).
       confirmationCode: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(b.status) ? b.otpCode : null,
     }));

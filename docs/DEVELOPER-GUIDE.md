@@ -413,7 +413,7 @@ Frontend conventions:
 | `GET /businesses/:id/reviews` | 🔓 | Reviews |
 | `GET /cities` · `GET /categories` | 🔓 | Catalog |
 | `POST /bookings` | customer | Create `{businessId, serviceId, staffId?, slotStart, paymentMethod:'PAY_AT_SHOP'}` → returns `otp` |
-| `GET /bookings/me` | customer | My bookings (with `confirmationCode`, `addOns`, `totalAmount`) |
+| `GET /bookings/me` | customer | My bookings (with `confirmationCode`, `addOns`, `totalAmount`, `review {rating, text}` once reviewed) |
 | `POST /bookings/:id/add-services` | customer | `{serviceIds[]}` |
 | `POST /bookings/:id/reschedule` | customer | `{slotStart, staffId?}` |
 | `POST /bookings/:id/cancel` | customer / owner | `{reason?}` |
@@ -505,3 +505,4 @@ Search for `TODO` in `backend/src` to see every stubbed call site.
 | 2026-11-21 | Founder phone-test fixes: IST timezone (slots started at 2:30 PM), salon-hours clipping (closed salons were bookable), 10-min late grace + owner check-in/no-show, busy-colour slots, confirmation code under Upcoming, add-on services, masked calling (Exotel), clickable admin lists, device photo uploads + profile pictures, salon location + map/directions, **Compare salons**; security fix for cross-salon service/staff edits; online payment disabled until live |
 | 2026-11-21 | Owner setting "accept bookings until X min before closing" |
 | 2026-11-21 | Fixed booking page rendering wider than the phone screen ("opens zoomed in") |
+| 2026-11-21 | Owner Manage buttons no longer share one busy state; call-button feedback is a toast; review form closes with a confirmation and shows the submitted review |

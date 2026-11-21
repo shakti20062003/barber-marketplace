@@ -175,5 +175,6 @@ export interface MyBooking {
   totalAmount: number;
   staff: { name: string } | null;
   hasReview: boolean;
+  review: { rating: number; text: string | null } | null;
   confirmationCode: string | null;
 }

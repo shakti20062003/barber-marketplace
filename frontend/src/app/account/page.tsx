@@ -55,6 +55,10 @@ function ReviewForm({ booking, onSubmitted }: { booking: MyBooking; onSubmitted:
       });
       onSubmitted();
     } catch (err) {
+      if (err instanceof ApiError && /already been reviewed/i.test(err.message)) {
+        onSubmitted(); // it was saved earlier — just close the form and refresh
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Could not submit review');
     } finally {
       setSubmitting(false);
@@ -180,6 +184,7 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [justReviewed, setJustReviewed] = useState(false);
   const [addingServices, setAddingServices] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isUpcoming = UPCOMING_STATUSES.has(booking.status);
@@ -339,9 +344,35 @@ function BookingCard({ booking, onChange }: { booking: MyBooking; onChange: () =
         </div>
       )}
 
-      {reviewing && (
+      {reviewing && !booking.hasReview && (
         <div className="px-3 pb-3">
-          <ReviewForm booking={booking} onSubmitted={onChange} />
+          <ReviewForm
+            booking={booking}
+            onSubmitted={() => {
+              setReviewing(false);
+              setJustReviewed(true);
+              onChange();
+            }}
+          />
+        </div>
+      )}
+
+      {justReviewed && (
+        <p role="status" className="mx-3 mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+          ✓ Thanks! Your review has been posted.
+        </p>
+      )}
+
+      {booking.review && (
+        <div className="mx-3 mb-3 rounded-lg border border-border bg-neutral-50 px-3 py-2 text-sm">
+          <p className="flex items-center gap-2">
+            <span className="font-medium">Your review</span>
+            <span className="text-amber-500" aria-label={`${booking.review.rating} out of 5 stars`}>
+              {'★'.repeat(booking.review.rating)}
+              <span className="text-neutral-300">{'★'.repeat(5 - booking.review.rating)}</span>
+            </span>
+          </p>
+          {booking.review.text && <p className="mt-0.5 text-muted">“{booking.review.text}”</p>}
         </div>
       )}
     </div>
