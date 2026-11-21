@@ -359,3 +359,8 @@ a phone, then click through the full flow in a browser to find bugs.
   on Windows) only recorded win32 native binaries (npm optional-deps bug).
   Regenerated it from scratch in a clean directory so all platform binaries
   are listed; both builds + backend tests re-verified.
+- Render assigned suffixed URLs (`trimly-web.onrender.com` is someone else's
+  suspended service). Live backend: `https://trimly-backend-3w0i.onrender.com`
+  (verified: `/api/cities` returns seeded data). Web now built against that
+  URL; backend CORS gained `WEB_APP_URL_PATTERN` (regex) so the suffixed web
+  URL is allowed without knowing it in advance.

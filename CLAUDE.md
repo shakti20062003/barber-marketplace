@@ -280,10 +280,11 @@ missing — search for `TODO` in `backend/src` to find them all:
 `render.yaml` is a Render Blueprint that brings up everything: `trimly-backend`,
 `trimly-web`, `trimly-redis` (Key Value, free) and `trimly-db` (Postgres),
 all in `singapore`. The backend build runs migrations + the idempotent seed.
-Cross-service URLs are hardcoded as the expected `https://<name>.onrender.com`;
-if Render assigns a suffixed URL (name taken), fix `WEB_APP_URL` (backend,
-comma-separated CORS list) and `NEXT_PUBLIC_API_URL` (web, baked in at build
-time, so redeploy after changing it). `NODE_ENV=development` there on purpose
+Render suffixed both service names (they were taken): the live backend is
+`https://trimly-backend-3w0i.onrender.com`, hardcoded as `NEXT_PUBLIC_API_URL`
+for the web service (baked in at build time, so redeploy web after changing
+it). Backend CORS = `WEB_APP_URL` (comma-separated exact origins) plus
+`WEB_APP_URL_PATTERN` (regex, set to match `trimly-web[-suffix].onrender.com`). `NODE_ENV=development` there on purpose
 so `devOtp` is returned until SMS delivery exists; switch to `production`
 once MSG91/Gupshup is wired up. Free-tier services sleep when idle, so the
 first request can take ~1 min.

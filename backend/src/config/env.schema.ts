@@ -23,6 +23,7 @@ export const envSchema = z.object({
   CLOUDINARY_API_SECRET: z.string().optional().default(''),
 
   WEB_APP_URL: z.string().default('http://localhost:3000'),
+  WEB_APP_URL_PATTERN: z.string().optional(),
 
   // FR-2.1 AC: default sort weighting must be configurable, not hardcoded.
   SEARCH_WEIGHT_DISTANCE: z.coerce.number().default(0.4),

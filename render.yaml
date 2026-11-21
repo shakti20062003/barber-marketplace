@@ -31,7 +31,10 @@ services:
       # Comma-separated list of allowed CORS origins. If Render gives the web
       # service a different URL (name taken), update this in the dashboard.
       - key: WEB_APP_URL
-        value: https://trimly-web.onrender.com,http://localhost:3000
+        value: http://localhost:3000
+      # Render suffixes service URLs when the name is taken (e.g. trimly-web-ab12).
+      - key: WEB_APP_URL_PATTERN
+        value: ^https://trimly-web(-[a-z0-9]+)?\.onrender\.com$
       - key: SEARCH_WEIGHT_DISTANCE
         value: 0.4
       - key: SEARCH_WEIGHT_RATING
@@ -50,7 +53,7 @@ services:
       # Baked in at build time. If Render gives the backend a different URL
       # (name taken), update this in the dashboard and redeploy.
       - key: NEXT_PUBLIC_API_URL
-        value: https://trimly-backend.onrender.com/api
+        value: https://trimly-backend-3w0i.onrender.com/api
 
   - type: keyvalue
     name: trimly-redis
