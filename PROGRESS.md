@@ -460,3 +460,12 @@ service may run past closing.
   Fix: `busy` is now the specific in-flight action (`'photos' | 'location' |
   'cutoff' | 'service' | 'servicePhoto' | 'staff' | 'photoLink'`), and each
   button checks only its own; "Save location" now shows "Saving…".
+
+## 2026-11-21 — Call button message breaking layout
+
+- Bug: tapping the call icon ("In-app calling is coming soon") rendered the
+  message as inline text under the button, which widened the owner
+  dashboard booking row (and the customer booking card's action row) and
+  squashed the neighbouring content. Fix: `CallButton` now shows feedback
+  as a fixed-position toast (above the mobile tab bar, auto-dismiss 4s,
+  tap to close) and the button itself has a fixed size (`shrink-0`).
