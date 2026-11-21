@@ -1,8 +1,8 @@
-// Trimly — Prisma schema
-// Mirrors docs/Trimly-PRD-SRS-v1 updated.md §8 (Database Requirements).
+// Trimly â€” Prisma schema
+// Mirrors docs/Trimly-PRD-SRS-v1 updated.md Â§8 (Database Requirements).
 // Geo queries: lat/lng are plain Float columns here; the PostGIS GIST index
-// on businesses(lat,lng) referenced in §8 "Indexing priorities" must be added
-// via a raw-SQL migration (Prisma has no native geography type) — see
+// on businesses(lat,lng) referenced in Â§8 "Indexing priorities" must be added
+// via a raw-SQL migration (Prisma has no native geography type) â€” see
 // database/prisma/migrations/*_add_postgis/migration.sql once PostGIS is enabled.
 
 generator client {
@@ -149,7 +149,7 @@ model User {
   @@map("users")
 }
 
-// reliability/no-show fields per §4.5 No-Show Management
+// reliability/no-show fields per Â§4.5 No-Show Management
 model CustomerProfile {
   userId              String   @id
   walletBalance        Decimal  @default(0) @db.Decimal(12, 2)
@@ -214,7 +214,10 @@ model Business {
   address             String?
   cityId              String
   workingHours        Json
-  // §4.3: { freeCancellationHours: number, penaltyPercent: number (0-100) }.
+  // Null = a service must finish by closing time (default). Set = bookings may
+  // start until this many minutes before closing, even if they run past it.
+  lastBookingCutoffMinutes Int?
+  // Â§4.3: { freeCancellationHours: number, penaltyPercent: number (0-100) }.
   // Null falls back to the platform default applied in application code.
   cancellationPolicy  Json?
   createdAt           DateTime           @default(now())
@@ -232,14 +235,14 @@ model Business {
   homeServiceAreas HomeServiceArea[]
   waitlistEntries  WaitlistEntry[]
 
-  // Postgres full-text + PostGIS geo-index target — see schema header note.
+  // Postgres full-text + PostGIS geo-index target â€” see schema header note.
   @@index([lat, lng])
   @@index([verificationStatus])
   @@index([cityId])
   @@map("businesses")
 }
 
-// normalized rather than a flag array — each badge has its own award/expiry
+// normalized rather than a flag array â€” each badge has its own award/expiry
 // logic and audit trail (see docs ADR-006)
 model BusinessTrustBadge {
   id         String      @id @default(uuid())
@@ -315,7 +318,7 @@ model Staff {
   languages          String[]
   photoUrl           String?
   averageRating       Decimal? @db.Decimal(3, 2)
-  // reserved for §7.5 home-service future-proofing — unused at MVP
+  // reserved for Â§7.5 home-service future-proofing â€” unused at MVP
   homeServiceCapable Boolean  @default(false)
   active             Boolean  @default(true)
 
@@ -332,7 +335,7 @@ model Staff {
   @@map("staff")
 }
 
-// self-reported badges — not independently verified by the platform at MVP
+// self-reported badges â€” not independently verified by the platform at MVP
 model StaffCertification {
   id           String  @id @default(uuid())
   staffId      String
@@ -366,7 +369,7 @@ model StaffPortfolioMedia {
 }
 
 // recurring weekly availability, modeled separately from date-specific
-// overrides (holidays, one-off closures) per §8
+// overrides (holidays, one-off closures) per Â§8
 model StaffAvailability {
   id        String @id @default(uuid())
   staffId   String
@@ -398,7 +401,7 @@ model StaffAvailabilityOverride {
 // Booking
 // ---------------------------------------------------------------------------
 
-// location-agnostic booking schema — §7.5 / ADR-004: serviceLocationType +
+// location-agnostic booking schema â€” Â§7.5 / ADR-004: serviceLocationType +
 // addressId are reserved now so Home Service (V2) needs no later migration.
 model Booking {
   id                  String              @id @default(uuid())
@@ -471,7 +474,7 @@ model Payment {
 
 // review submission gated to COMPLETED bookings at the application layer;
 // the 1:1 unique FK to bookingId prevents duplicate/fake reviews at the
-// data-model level per §4.4
+// data-model level per Â§4.4
 model Review {
   id          String   @id @default(uuid())
   bookingId   String   @unique
@@ -538,7 +541,7 @@ model Subscription {
   @@map("subscriptions")
 }
 
-// [V2] fields — reserved in schema now per §7.5
+// [V2] fields â€” reserved in schema now per Â§7.5
 model HomeServiceArea {
   id              String  @id @default(uuid())
   businessId      String
@@ -555,7 +558,7 @@ model HomeServiceArea {
   @@map("home_service_areas")
 }
 
-// supports §4.6 Waitlist System
+// supports Â§4.6 Waitlist System
 model WaitlistEntry {
   id                String          @id @default(uuid())
   customerId        String
@@ -625,7 +628,7 @@ model NotificationLog {
 }
 
 // required for verification decisions, cancellations, refunds, no-show
-// flags, and badge awards — needed for dispute resolution, do not skip
+// flags, and badge awards â€” needed for dispute resolution, do not skip
 model AuditLog {
   id           String   @id @default(uuid())
   actorUserId  String

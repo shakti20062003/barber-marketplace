@@ -6,7 +6,93 @@ import { useEffect, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { getStoredUser, getToken } from '@/lib/auth-client';
 import type { CurrentUser, OwnerBusinessDetail, Service } from '@/lib/types';
-import { fileToResizedDataUrl } from '@/lib/image';
+import { fileToResizedDataUrl, formatHhmm } from '@/lib/image';
+
+const CUTOFF_OPTIONS = [0, 15, 30, 45, 60, 90, 120];
+
+function minusMinutes(hhmm: string, mins: number): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = Math.max(0, h * 60 + m - mins);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function BookingHoursSection({
+  business,
+  busy,
+  onSave,
+}: {
+  business: OwnerBusinessDetail;
+  busy: boolean;
+  onSave: (cutoff: number | null) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<'finish' | 'cutoff'>(business.lastBookingCutoffMinutes == null ? 'finish' : 'cutoff');
+  const [cutoff, setCutoff] = useState<number>(business.lastBookingCutoffMinutes ?? 30);
+  const [saved, setSaved] = useState(false);
+
+  // Preview against a real open day of this salon (first open day, Mon→Sun).
+  const sample = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+    .map((k) => business.workingHours?.[k])
+    .find((d) => d && !d.closed);
+  const sampleService = business.services[0];
+  const dirty = (mode === 'finish' ? null : cutoff) !== business.lastBookingCutoffMinutes;
+
+  return (
+    <Section title="Last booking time">
+      <p className="text-sm text-muted">How late in the day can customers book?</p>
+      <label className={`flex gap-3 rounded-xl border p-3 text-sm ${mode === 'finish' ? 'border-brand bg-brand-tint/40' : 'border-border bg-surface'}`}>
+        <input type="radio" checked={mode === 'finish'} onChange={() => setMode('finish')} className="mt-0.5 accent-[var(--brand)]" />
+        <span>
+          <span className="font-medium">Service must finish by closing time</span>{' '}
+          <span className="text-xs text-muted">(recommended)</span>
+          {sample && sampleService && (
+            <span className="mt-0.5 block text-xs text-muted">
+              e.g. open {formatHhmm(sample.open)}–{formatHhmm(sample.close)}: a {sampleService.durationMinutes}-min{' '}
+              {sampleService.name} can start until{' '}
+              {formatHhmm(minusMinutes(sample.close, sampleService.durationMinutes))}
+            </span>
+          )}
+        </span>
+      </label>
+      <label className={`flex gap-3 rounded-xl border p-3 text-sm ${mode === 'cutoff' ? 'border-brand bg-brand-tint/40' : 'border-border bg-surface'}`}>
+        <input type="radio" checked={mode === 'cutoff'} onChange={() => setMode('cutoff')} className="mt-0.5 accent-[var(--brand)]" />
+        <span className="flex-1">
+          <span className="font-medium">Accept bookings until</span>
+          <select
+            value={cutoff}
+            onChange={(e) => {
+              setMode('cutoff');
+              setCutoff(Number(e.target.value));
+            }}
+            className="mx-1.5 rounded-lg border border-border bg-surface px-2 py-1 text-sm"
+          >
+            {CUTOFF_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m === 0 ? 'closing time' : `${m} min before`}
+              </option>
+            ))}
+          </select>
+          {cutoff !== 0 && <span className="font-medium">closing</span>}
+          {sample && (
+            <span className="mt-0.5 block text-xs text-muted">
+              e.g. closing {formatHhmm(sample.close)}: last booking starts at{' '}
+              {formatHhmm(minusMinutes(sample.close, cutoff))}, for any service. Longer services may run past closing.
+            </span>
+          )}
+        </span>
+      </label>
+      <button
+        onClick={async () => {
+          await onSave(mode === 'finish' ? null : cutoff);
+          setSaved(true);
+        }}
+        disabled={busy || !dirty}
+        className="w-full rounded-xl bg-brand py-2.5 text-sm font-semibold text-brand-foreground disabled:opacity-50"
+      >
+        {saved && !dirty ? 'Saved ✓' : 'Save'}
+      </button>
+    </Section>
+  );
+}
 
 /** Pulls coordinates out of a pasted Google Maps link ("@19.07,72.87" or "q=19.07,72.87"). */
 function coordsFromMapsLink(link: string): { lat: number; lng: number } | null {
@@ -299,6 +385,24 @@ export default function OwnerManagePage() {
     }
   }
 
+  async function saveCutoff(lastBookingCutoffMinutes: number | null) {
+    if (!token || !business) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/owner/businesses/${business.id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ lastBookingCutoffMinutes }),
+      });
+      reload(business.id, token);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save setting');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removePhoto(mediaId: string) {
     if (!token || !business) return;
     setBusy(true);
@@ -439,6 +543,8 @@ export default function OwnerManagePage() {
           Save location
         </button>
       </Section>
+
+      <BookingHoursSection key={String(business.lastBookingCutoffMinutes)} business={business} busy={busy} onSave={saveCutoff} />
 
       <Section title={`Services (${business.services.length})`}>
         <div className="divide-y divide-border rounded-xl border border-border bg-surface">

@@ -420,3 +420,18 @@ problems found on the way:
 - Migration `20261121073150_founder_feedback_fields` (otpCode, address,
   Service.imageUrl, User.avatarUrl, booking_add_ons). Render applies it on
   deploy via `migrate deploy`.
+
+## 2026-11-21 — Owner setting: last booking time before closing (in progress)
+
+Founder asked for an owner setting "accept bookings until X minutes before
+closing". Default (unset) keeps the current rule: a service must finish by
+closing time (9–7 salon, 60-min service → last start 6:00 PM). When set, the
+last start time is closing − X regardless of service length, and the
+service may run past closing.
+- Done: `Business.lastBookingCutoffMinutes` (migration
+  `last_booking_cutoff`), `fitsWindow()` in `common/scheduling` used by both
+  the availability grid and booking creation, owner UI under Manage → "Last
+  booking time" with a live preview from the salon's own hours. Verified: 4
+  new unit tests (15 total), plus a live API run on Style Studio. Default
+  last start 6:15 PM for a 45-min service; 30-min setting gives 6:30 PM;
+  999 rejected; null restores the default.

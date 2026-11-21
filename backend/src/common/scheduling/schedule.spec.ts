@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LATE_GRACE_MINUTES,
   businessWindowFor,
+  fitsWindow,
   isBlocking,
   isOpenAt,
   isPastGrace,
@@ -85,5 +86,32 @@ describe('late grace period', () => {
   it('cancelled / completed bookings never block', () => {
     expect(isBlocking({ status: 'CANCELLED', slotStart }, at(0))).toBe(false);
     expect(isBlocking({ status: 'COMPLETED', slotStart }, at(0))).toBe(false);
+  });
+});
+
+describe('fitsWindow (last booking before closing)', () => {
+  const w = businessWindowFor(HOURS, MONDAY)!; // 09:00–19:00
+  const slot = (h: number, m: number, mins: number) => {
+    const start = new Date(2026, 10, 23, h, m);
+    return [start, new Date(start.getTime() + mins * 60_000)] as const;
+  };
+
+  it('default: a 60-min service must finish by 7 PM, so 6 PM is the last start', () => {
+    expect(fitsWindow(...slot(18, 0, 60), w, null)).toBe(true);
+    expect(fitsWindow(...slot(18, 15, 60), w, null)).toBe(false);
+  });
+
+  it('owner cutoff of 30 min: bookings may start until 6:30 PM, even if they run past closing', () => {
+    expect(fitsWindow(...slot(18, 30, 60), w, 30)).toBe(true);
+    expect(fitsWindow(...slot(18, 45, 60), w, 30)).toBe(false);
+  });
+
+  it('cutoff of 0 allows starting right up to closing time', () => {
+    expect(fitsWindow(...slot(18, 45, 60), w, 0)).toBe(true);
+    expect(fitsWindow(...slot(19, 0, 60), w, 0)).toBe(true);
+  });
+
+  it('never before opening', () => {
+    expect(fitsWindow(...slot(8, 45, 30), w, 30)).toBe(false);
   });
 });

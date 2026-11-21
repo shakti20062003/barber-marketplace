@@ -26,6 +26,8 @@ export const createBusinessSchema = z.object({
   address: z.string().max(500).nullable().optional(),
   cityId: z.string().uuid(),
   workingHours: workingHoursSchema,
+  // null = service must finish by closing (default rule).
+  lastBookingCutoffMinutes: z.number().int().min(0).max(240).nullable().optional(),
 });
 export type CreateBusinessDto = z.infer<typeof createBusinessSchema>;
 

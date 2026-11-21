@@ -13,6 +13,7 @@ import {
   BLOCKING_STATUSES,
   businessWindowFor,
   dbDateFor,
+  fitsWindow,
   isBlocking,
   isPastGrace,
   isOpenAt,
@@ -247,7 +248,10 @@ export class BusinessesService {
   async availability(businessId: string, query: AvailabilityQueryDto) {
     const [service, business] = await Promise.all([
       this.prisma.service.findUnique({ where: { id: query.serviceId } }),
-      this.prisma.business.findUnique({ where: { id: businessId }, select: { workingHours: true } }),
+      this.prisma.business.findUnique({
+        where: { id: businessId },
+        select: { workingHours: true, lastBookingCutoffMinutes: true },
+      }),
     ]);
     if (!service || service.businessId !== businessId || !business) {
       throw new NotFoundException('Service not found for this business');
@@ -308,13 +312,15 @@ export class BusinessesService {
     const grid: typeof empty.grid = [];
     for (
       let t = businessWindow.start.getTime();
-      t + durationMs <= businessWindow.end.getTime();
+      t < businessWindow.end.getTime();
       t += SLOT_STEP_MINUTES * 60_000
     ) {
       const start = new Date(t);
       const end = new Date(t + durationMs);
       if (start <= now) continue;
-      const working = staffWindows.filter((s) => s.windows.some((w) => start >= w.start && end <= w.end));
+      const working = staffWindows.filter((s) =>
+        s.windows.some((w) => fitsWindow(start, end, w, business.lastBookingCutoffMinutes)),
+      );
       if (working.length === 0) continue;
       const free = working.filter(
         (s) => !blocking.some((b) => b.staffId === s.id && start < b.slotEnd && end > b.slotStart),

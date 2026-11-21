@@ -111,6 +111,22 @@ export function staffWindowsFor(
 }
 
 /**
+ * Whether a service occupying [start, end) can be booked inside window `w`.
+ *
+ * - `cutoffMinutes` null (default): the whole service must fit, i.e. finish
+ *   by the end of the window (salon closing / end of the stylist's shift).
+ *   A 9–7 salon with a 60-min service → last start 6:00 PM.
+ * - `cutoffMinutes` set (owner setting "accept bookings until X min before
+ *   closing"): the service may start up to X minutes before the window
+ *   ends, regardless of its length, and is allowed to run past it.
+ */
+export function fitsWindow(start: Date, end: Date, w: TimeWindow, cutoffMinutes: number | null | undefined): boolean {
+  if (start < w.start) return false;
+  if (cutoffMinutes == null) return end <= w.end;
+  return start.getTime() <= w.end.getTime() - cutoffMinutes * 60_000;
+}
+
+/**
  * Whether an existing booking still holds its staff member's time. A
  * CONFIRMED booking whose customer hasn't been checked in (moved to
  * IN_PROGRESS) within LATE_GRACE_MINUTES of the start is treated as a

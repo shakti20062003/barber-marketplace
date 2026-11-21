@@ -133,6 +133,9 @@ export interface OwnerBusinessDetail {
   lat: number;
   lng: number;
   address: string | null;
+  workingHours: Record<string, { open: string; close: string; closed: boolean }>;
+  /** null = a service must finish by closing time (default). */
+  lastBookingCutoffMinutes: number | null;
   city: { name: string };
   media: { id: string; url: string; type: string }[];
   services: Service[];

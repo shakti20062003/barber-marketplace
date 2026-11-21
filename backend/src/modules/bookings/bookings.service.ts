@@ -16,6 +16,7 @@ import {
   BLOCKING_STATUSES,
   businessWindowFor,
   dbDateFor,
+  fitsWindow,
   isBlocking,
   startOfLocalDay,
   staffWindowsFor,
@@ -85,7 +86,7 @@ export class BookingsService {
         where: { id: staffId },
         include: {
           availability: { where: { dayOfWeek: day.getDay() } },
-          business: { select: { workingHours: true } },
+          business: { select: { workingHours: true, lastBookingCutoffMinutes: true } },
         },
       }),
       this.prisma.staffAvailabilityOverride.findFirst({ where: { staffId, specificDate: dbDateFor(day) } }),
@@ -110,7 +111,7 @@ export class BookingsService {
       staff.availability,
       override,
     );
-    return windows.some((w) => slotStart >= w.start && slotEnd <= w.end);
+    return windows.some((w) => fitsWindow(slotStart, slotEnd, w, staff.business.lastBookingCutoffMinutes));
   }
 
   private async findAnyAvailableStaff(businessId: string, slotStart: Date, slotEnd: Date): Promise<string | null> {

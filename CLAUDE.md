@@ -189,6 +189,12 @@ actually resolves through the workspace symlink.
   - staff with no `StaffAvailability` rows (anyone added from the owner UI)
     default to the salon's full hours;
   - start times are offered every 15 min (`SLOT_STEP_MINUTES`);
+  - **last booking time** (`fitsWindow`, `Business.lastBookingCutoffMinutes`,
+    owner setting under Manage → "Last booking time"): `null` (default) means
+    the whole service must finish by closing (9–7 salon, 60-min service → last
+    start 6 PM). If set to X (0–240), a booking may start up to X min before
+    closing (or the end of the stylist's shift), whatever its length, and may
+    run past closing;
   - **10-min late grace** (`LATE_GRACE_MINUTES`): a `CONFIRMED` booking not
     checked in (`POST /bookings/:id/start` → `IN_PROGRESS`) within 10 min of
     its start stops blocking the slot. The status is never changed
