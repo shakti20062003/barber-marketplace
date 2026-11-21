@@ -530,3 +530,14 @@ service may run past closing.
   the production build: Style Finder analysed a sample portrait (Oval 54%,
   matches 76–91%, sorted), salon hours list, owner achievements, hours
   editor at ~280px width.
+
+## 2026-11-21 — Style Finder polish + starter photos
+
+- Sticky Women's/Men's bar left a 3px see-through gap under the top nav
+  (pinned at 56px; the nav is 53px). Now `top-[52px]` with a solid background.
+- Home heading shortened to "✨ Featured near you".
+- Style photos: founder asked for photos from the internet. Used free
+  Unsplash images (Unsplash License allows commercial use without
+  permission), hand-picked from Unsplash's free-license search so each photo
+  shows its cut, all 28 distinct, all verified to load. Seed `STYLE_PHOTOS`
+  fills only styles with no photo (admin uploads are never replaced).

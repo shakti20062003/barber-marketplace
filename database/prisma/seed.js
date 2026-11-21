@@ -359,6 +359,43 @@ const STYLES = [
   ['WOMEN', 'Beach Waves', 'Shoulder-length hair with loose, relaxed waves.', 'Medium', 'High', fit(90, 82, 90, 86, 88, 86)],
 ];
 
+// Starter photos for the Style Finder: free-to-use images from Unsplash
+// (Unsplash License — free for commercial use, no permission needed;
+// https://unsplash.com/license). Hotlinked from Unsplash's image CDN as
+// Unsplash recommends. Replace any of them from Admin → Style Finder
+// catalogue; the seed only fills styles that have no photo yet.
+const unsplash = (id) => `https://images.unsplash.com/${id}?w=600&h=750&fit=crop&crop=faces&q=70`;
+const STYLE_PHOTOS = {
+  'Classic Taper': unsplash('photo-1599011176306-4a96f1516d4d'),
+  'Buzz Cut': unsplash('photo-1645857656936-b1bdb9a52059'),
+  'Crew Cut': unsplash('photo-1582852629465-2dc90cbcc6d2'),
+  'Side Part': unsplash('photo-1627100232173-acf3733f02bc'),
+  'Pompadour': unsplash('photo-1562004760-aceed7bb0fe3'),
+  'Quiff': unsplash('photo-1594910344569-a542a5f4bdff'),
+  'Undercut': unsplash('photo-1568339434343-2a640a1a9946'),
+  'French Crop': unsplash('photo-1673118306590-0a82988ba2c3'),
+  'Textured Fringe': unsplash('photo-1592061631928-0837e75fab3b'),
+  'Faux Hawk': unsplash('photo-1695662917617-a1bfc0e2fbed'),
+  'Slick Back': unsplash('photo-1456327102063-fb5054efe647'),
+  'Medium Flow': unsplash('photo-1513956589380-bad6acb9b9d4'),
+  'Curly Top Fade': unsplash('photo-1644409840040-5130284fe1d6'),
+  'Man Bun': unsplash('photo-1551494878-8fcf8715f308'),
+  'Long Layers': unsplash('photo-1554519934-e32b1629d9ee'),
+  'Bob': unsplash('photo-1658322558683-2524c9b62d04'),
+  'Lob (Long Bob)': unsplash('photo-1682450285233-1fb10d4a4616'),
+  'Pixie Cut': unsplash('photo-1519362909365-f8591adb630e'),
+  'Curtain Bangs': unsplash('photo-1628292180187-3bac5c5b3cb6'),
+  'Butterfly Cut': unsplash('photo-1678567535515-e23d231697a1'),
+  'Wolf Cut': unsplash('photo-1644976914567-7fce1957e540'),
+  'Shag Cut': unsplash('photo-1565090110341-a88f1e62f42b'),
+  'Blunt Cut': unsplash('photo-1608877607386-8698047d65a9'),
+  'Side-Swept Bangs': unsplash('photo-1778109303711-9bee4d721c7c'),
+  'Feather Cut': unsplash('photo-1499557354967-2b2d8910bcca'),
+  'U-Cut': unsplash('photo-1766801387034-e0e65f912834'),
+  'Step Cut': unsplash('photo-1702910449473-0ed91bb0dd4a'),
+  'Beach Waves': unsplash('photo-1658688976101-e19db9ab35d7'),
+};
+
 async function main() {
   for (const name of ['Men', 'Women', 'Unisex', 'Spa']) {
     const existing = await prisma.category.findFirst({ where: { name } });
@@ -500,8 +537,13 @@ async function main() {
     await prisma.hairStyle.upsert({
       where: { name_gender: { name, gender } },
       update: {}, // never overwrite admin edits / uploaded photos
-      create: { name, gender, description, length, maintenance, faceShapeFit, order: styleOrder },
+      create: { name, gender, description, length, maintenance, faceShapeFit, order: styleOrder, imageUrl: STYLE_PHOTOS[name] ?? null },
     });
+    // Fill in a starter photo only where none exists — never replaces an
+    // admin-uploaded (or admin-removed-and-replaced) photo.
+    if (STYLE_PHOTOS[name]) {
+      await prisma.hairStyle.updateMany({ where: { name, gender, imageUrl: null }, data: { imageUrl: STYLE_PHOTOS[name] } });
+    }
     styleOrder++;
   }
   console.log(`Style Finder catalogue: ${STYLES.length} styles ensured`);

@@ -412,10 +412,15 @@ suits their face.
   oblong, diamond; `imageUrl`). 28 starter styles (14 + 14) are seeded with
   scores from standard face-shape styling guidance. They're upserted by
   (name, gender) and **never overwritten**, so admin edits survive re-seeding.
-- **Photos:** the app has no licensed hairstyle photos, so styles show an
-  illustrated placeholder until an admin uploads a picture (Admin → "Style
-  Finder catalogue"; same on-device resize + data-URL storage as other
-  uploads). Admins can also add styles and hide them.
+- **Photos:** starter photos are free **Unsplash** images (Unsplash License:
+  free commercial use, no permission needed), hand-picked so each one shows
+  its cut, hotlinked from `images.unsplash.com` (`STYLE_PHOTOS` in the seed).
+  The seed only fills styles with **no** photo, so admin uploads are never
+  replaced. Admins can replace photos (Admin → "Style Finder catalogue"; same
+  on-device resize + data-URL storage as other uploads), add styles and hide
+  them. A style without a photo shows an illustrated placeholder.
+  Unsplash doesn't guarantee model releases, so swap in your own salon photos
+  once you have them.
 - **Face analysis runs entirely in the browser; the photo is never
   uploaded.** Google MediaPipe Face Landmarker (`@mediapipe/tasks-vision@0.10.14`
   plus the float16 model, ~4 MB) is **loaded at runtime from jsDelivr / Google
@@ -548,7 +553,7 @@ by `prisma migrate deploy` during the backend build.
 | Rate limiting | Only OTP routes | `@nestjs/throttler` doesn't support Nest 12 yet |
 | Google/email login, home-service bookings, loyalty/referrals/wallet | Not built | V2/V3 per PRD |
 | Per-stylist shifts / days off | Data model + scheduling support it, no owner UI | Add a staff-hours editor (all stylists follow salon hours today) |
-| Style Finder photos | Illustrated placeholders | Admin uploads licensed photos (Admin → Style Finder catalogue) |
+| Style Finder photos | Free Unsplash starter photos | Replace with own salon photos over time (Admin → Style Finder catalogue) |
 | Multi-salon owners | UI uses the owner's first salon | Salon switcher |
 
 Search for `TODO` in `backend/src` to see every stubbed call site.

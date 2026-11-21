@@ -63,7 +63,7 @@ export default async function Page(props: PageProps<'/'>) {
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold">✨ Featured salons in your area</h2>
+            <h2 className="text-lg font-semibold">✨ Featured near you</h2>
             <p className="truncate text-xs text-muted">
               {location.source === 'fallback'
                 ? `Mumbai · within ${location.radiusKm} km · tap 📍 Near me for your area`

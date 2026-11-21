@@ -341,8 +341,9 @@ actually resolves through the workspace symlink.
   CDN** (`import(/* webpackIgnore */ /* turbopackIgnore */ url)`), never
   bundled or npm-installed (lockfile gotcha). The photo never leaves the
   device. Seeded catalogue: 28 styles with per-face-shape scores, upserted
-  and never overwritten. Photos are admin-uploaded (Admin → Style Finder
-  catalogue); placeholders until then.
+  and never overwritten. Starter photos are free Unsplash images
+  (`STYLE_PHOTOS` in the seed, only fills styles with no photo); admins
+  replace them in Admin → Style Finder catalogue.
 - **Achievements** (`modules/businesses/achievements.ts`): computed per
   request from reviews and completed visits, never stored. Earned ones go on
   search cards and the salon page; the full list with progress is on the owner
