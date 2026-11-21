@@ -364,3 +364,24 @@ a phone, then click through the full flow in a browser to find bugs.
   (verified: `/api/cities` returns seeded data). Web now built against that
   URL; backend CORS gained `WEB_APP_URL_PATTERN` (regex) so the suffixed web
   URL is allowed without knowing it in advance.
+
+## 2026-11-21 — Founder's phone-test bug list (in progress)
+
+Reported after first use on a phone against the Render deploy:
+1. Slots showed ~2:30 PM–midnight instead of from opening time (server runs
+   in UTC; working hours were interpreted as UTC). Also: slots ignored the
+   salon's own working hours entirely (only staff hours), and staff added
+   via the owner UI had no availability rows so produced no slots.
+2. 10-minute grace: a CONFIRMED booking not started 10 min past its start
+   stops blocking the slot; owner can then mark no-show / cancel. "Please
+   reach on time" note after booking. BookMyShow-style busy/filling/full
+   colour coding of slots during booking.
+3. Salon shown "Closed" on home but still bookable.
+4. Show the confirmation code on upcoming bookings.
+5. Masked calling customer <-> salon (needs a telephony provider; building
+   the Exotel integration behind env vars).
+6. Add more services to a confirmed booking.
+7. Admin console tiles clickable, each opening its list.
+8. Owner: upload photos/service images from device, owner profile picture,
+   exact map location; customer sees map + directions.
+New: compare two salons side by side.
