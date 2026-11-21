@@ -430,6 +430,16 @@ suits their face.
   cheekbone), compared with typical values for each shape to get
   probabilities. Match % = Σ P(shape) × the style's score for that shape.
   Photo checks: no face, more than one face, face too small, head turned.
+- **Robust photo handling** (fixed after a real phone selfie came back "no
+  face"): phones store portraits sideways with an EXIF rotate flag. The
+  photo is decoded upright with `createImageBitmap(file, { imageOrientation:
+  'from-image' })` and downscaled to 1024px. If no face is found, it retries
+  with a grey border (close-ups touching the edges), then rotated 90°, 270°
+  and 180° (missing or wrong flag). Detector confidence thresholds are 0.3
+  (default 0.5). A tip asks for the whole face when the forehead or chin
+  touches the edge, since a cropped face reads rounder. Tested: normal,
+  phone-style sideways+flag, sideways without flag and tight close-up are all
+  detected; a back-of-head photo is rejected.
 - **It's an estimate.** The prototype proportions in `faceShape.ts` are
   hand-calibrated; the UI says it's a styling guide, not a guarantee.
   Verified end to end on a sample portrait (Oval, 54%, matches 76–91%). If

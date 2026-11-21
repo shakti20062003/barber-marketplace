@@ -541,3 +541,17 @@ service may run past closing.
   permission), hand-picked from Unsplash's free-license search so each photo
   shows its cut, all 28 distinct, all verified to load. Seed `STYLE_PHOTOS`
   fills only styles with no photo (admin uploads are never replaced).
+
+## 2026-11-21 — Style Finder: "couldn't find a face" on a good selfie
+
+- Bug: a clear close-up selfie was rejected. Likely cause: phone photos are
+  stored sideways with an EXIF orientation flag; the preview honours it, but
+  the raw pixels went to the detector sideways. Close-ups whose face touches
+  the frame edges are a second common miss.
+- Fix (`lib/faceShape.ts`): decode upright (`createImageBitmap` +
+  `imageOrientation: 'from-image'`), downscale to 1024px, retry with padding
+  and with 90/270/180° rotations, detector confidence 0.3; a clearer error
+  message; a tip when the face is cropped (shape reads rounder).
+- Verified in the browser on the production build with generated test
+  photos: normal ✓, sideways+EXIF (phone-style) ✓, sideways without EXIF ✓,
+  tight close-up ✓ (+ tip), back of head → correctly rejected.

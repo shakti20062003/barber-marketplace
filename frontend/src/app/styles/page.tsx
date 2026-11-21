@@ -103,6 +103,7 @@ export default function StyleFinderPage() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanTip, setScanTip] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [sortByMatch, setSortByMatch] = useState(false);
   const [nudge, setNudge] = useState(false);
@@ -129,6 +130,7 @@ export default function StyleFinderPage() {
       if (photoUrl) URL.revokeObjectURL(photoUrl);
       setPhotoUrl(result.imageUrl);
       setAnalysis(result.analysis);
+      setScanTip(result.tip);
       setSortByMatch(true);
     } catch (err) {
       setScanError(err instanceof FaceScanError ? err.message : 'Something went wrong scanning that photo. Please try again.');
@@ -213,6 +215,9 @@ export default function StyleFinderPage() {
           </>
         )}
         {scanError && <p className="mt-2 rounded-lg bg-red-50 p-2 text-sm text-red-700">{scanError}</p>}
+        {analysis && !scanError && scanTip && (
+          <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">{scanTip}</p>
+        )}
         <p className="mt-2 text-[11px] text-muted">
           🔒 Your photo stays on your phone — it&apos;s analysed on your device and never uploaded.
         </p>
