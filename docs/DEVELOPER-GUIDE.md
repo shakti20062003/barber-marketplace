@@ -7,6 +7,7 @@ run and deploy it, and the rules that are easy to break by accident.
 | Document | What it's for |
 |---|---|
 | **`docs/DEVELOPER-GUIDE.md`** (this file) | The complete picture: architecture, flows, API, conventions, gotchas. |
+| `docs/BUSINESS-BRIEF.md` | Business handoff: what's live, costs, founder decisions, open business questions, pre-launch checklist. |
 | `docs/Trimly-PRD-SRS-v1 updated.md` | Product requirements: *what* to build and *why*. Source of truth for product decisions. |
 | `CLAUDE.md` | Condensed briefing for Claude sessions (same facts, terser). |
 | `PROGRESS.md` | Dated build log: what changed, when, and why. |

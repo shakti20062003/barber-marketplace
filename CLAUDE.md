@@ -13,6 +13,39 @@ reference, data model, deploy, how-tos) see **`docs/DEVELOPER-GUIDE.md`**.
 Keep it current too: when a convention, rule, endpoint or gap changes,
 update the matching section there as well as here.
 
+## Current status & handoff (updated 2026-11-21, end of day 1)
+
+**Read this section first in a new session.**
+
+- **The tech side of the first release is done and live.** Next sessions are
+  expected to be about **business / go-to-market**. Start with
+  **`docs/BUSINESS-BRIEF.md`**: what exists, cost (₹0, free tiers), decisions
+  already made, open questions, and the pre-launch checklist.
+- **Live:** backend `https://trimly-backend-3w0i.onrender.com/api`; web app
+  `https://trimly-web-<suffix>.onrender.com` (ask the founder for the exact
+  URL). Auto-deploys from GitHub `main` (`shakti20062003/barber-marketplace`).
+  The founder has installed it on an Android phone (Chrome "Install app").
+- **Render env set by the founder:** `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS`,
+  `PHONE_LOGIN=off`. Values are private; never ask for or print them.
+  Verified working: Google login, in-app calls between real phones, push.
+- **Founder profile:** solo, non-technical founder; writes informal
+  Hindi-English; tests on their phone and reports issues casually ("this is
+  not fixed"). **Cost-sensitive: no paid services until they say so.**
+- **Founder decisions (don't re-propose without being asked):** web-first
+  (no native apps yet); Google login (phone OTP off until paid SMS); in-app
+  WebRTC calling instead of Exotel; pay-at-shop only until Razorpay; Style
+  Finder shows Great/Good/May-not-suit bands, **never percentages**, and no
+  paid AI; all hairstyles open to everyone; home service **to be discussed
+  before any building**.
+- **Known business risks to raise:** Render free Postgres has historically
+  expired ~30 days after creation (created ~2026-11-16), so check it; the 12
+  demo salons + demo users are fictional seed data still on the live site,
+  and the deploy re-runs the seed, so removing them needs a seed change too.
+- **How work has been done (keep doing it):** verify fixes for real (API
+  scripts, browser checks at phone width) before saying they're done; report
+  honestly what couldn't be verified; log every chunk in `PROGRESS.md`; keep
+  this file, `docs/DEVELOPER-GUIDE.md` and `docs/BUSINESS-BRIEF.md` current.
+
 ## What this is
 
 Trimly is a two-sided marketplace for booking barbers, salons, beauty
@@ -399,29 +432,28 @@ actually resolves through the workspace symlink.
 
 ## Known gaps / stubbed integrations
 
-These are TODO-commented at their exact call site in the code, not silently
-missing — search for `TODO` in `backend/src` to find them all:
+TODO-commented at their call sites (search `TODO` in `backend/src`):
 
-- Razorpay: webhook signature verification is real
-  (`modules/payments/payments.service.ts`); actual order-creation API call
-  is a placeholder (no credentials configured).
-- Online payment is switched off end to end (UI and API) until Razorpay is
-  live; see "PAY_NOW is rejected" above.
-- Masked calling needs an Exotel account (env vars above). The code is
-  built but not exercised against a live Exotel account.
-- Photo uploads are stored inline in Postgres as data URLs, not in object
-  storage (see "Owner salon setup").
-- SMS/WhatsApp OTP delivery: logged to console in development
-  (`modules/auth/auth.service.ts`), no MSG91/Gupshup integration yet.
-- Job queue (BullMQ, per PRD §7.2) is not set up at all — notification
-  dispatch (booking confirmation, reminders, waitlist notify) is currently
-  either synchronous-and-minimal or a no-op TODO. This is the biggest
-  actual functionality gap versus the PRD.
-- Rate limiting via `@nestjs/throttler` — not installed, see Nest 12 note
-  above.
-- No Google/email auth, no home-service booking flow (V2 per PRD, schema
-  fields are reserved but unused), no loyalty/referral/wallet (V2/V3 per
-  PRD).
+- **Online payments**: Razorpay webhook signature verification is real;
+  order creation is a placeholder. PAY_NOW is rejected (UI and API) until
+  it's live. Pay at shop only.
+- **SMS**: none. Phone-OTP login is test-only (code shown on screen) and is
+  **off in production** (`PHONE_LOGIN=off`). Profile phone numbers are
+  unverified until SMS exists.
+- **Calling**: free in-app WebRTC calls are live and work between real phones.
+  No TURN relay is configured; add one (env `TURN_*`) if some mobile networks
+  fail. Exotel phone-network masking code exists but is unused/unconfigured.
+- **Notifications**: owner push alerts (book / change / cancel / add-ons) and
+  call ringing are live. Missing: customer reminders before visits, waitlist
+  alerts, SMS fallback. These need a scheduler / job queue (BullMQ, PRD §7.2).
+- **Photos** are stored inline in Postgres as data URLs (no object storage).
+- **Not built:** home-service booking (V2, discuss first; schema fields
+  reserved), loyalty / referral / wallet (V2/V3), per-stylist shift editor
+  (stylists follow salon hours), multi-salon owners (UI uses the first salon),
+  email login.
+- **Security follow-ups** (accepted for launch, see DEVELOPER-GUIDE §10b):
+  Prisma 7 / Zod 4 upgrades for dev-tool audit warnings; JWT in localStorage
+  → httpOnly cookies; web CSP.
 
 ## Deployment (Render)
 
@@ -432,10 +464,13 @@ Render suffixed both service names (they were taken): the live backend is
 `https://trimly-backend-3w0i.onrender.com`, hardcoded as `NEXT_PUBLIC_API_URL`
 for the web service (baked in at build time, so redeploy web after changing
 it). Backend CORS = `WEB_APP_URL` (comma-separated exact origins) plus
-`WEB_APP_URL_PATTERN` (regex, set to match `trimly-web[-suffix].onrender.com`). `NODE_ENV=development` there on purpose
-so `devOtp` is returned until SMS delivery exists; switch to `production`
-once MSG91/Gupshup is wired up. Free-tier services sleep when idle, so the
-first request can take ~1 min.
+`WEB_APP_URL_PATTERN` (regex, set to match `trimly-web[-suffix].onrender.com`).
+`NODE_ENV=development` there on purpose; it's harmless now that
+`PHONE_LOGIN=off` blocks OTP. **Don't switch Render's `NODE_ENV` to
+`production`**: the build's `npm install` would then skip devDependencies
+(Nest CLI, TypeScript) and the build would fail. Free-tier services sleep when
+idle, so the first request can take ~1 min. Never set `PUSH_ALLOW_ANY_ENDPOINT`
+on Render (test-only; re-opens an SSRF hole).
 
 **Lockfile gotcha:** the root `package-lock.json` must list Linux native
 binaries (`lightningcss-linux-x64-gnu`, `@tailwindcss/oxide-linux-x64-gnu`,
@@ -445,6 +480,11 @@ fix it (it reuses the installed tree); regenerate by copying the root +
 workspace `package.json` files to an empty directory, running
 `npm install --package-lock-only` there with no lockfile, and copying the
 result back. Check with `grep linux-x64-gnu package-lock.json`.
+To **upgrade a package** without churning everything (done for Next 16.4.6):
+bump the version in the workspace `package.json`, copy the root + workspace
+`package.json` files **and the current lockfile** to an empty directory, run
+`npm install --package-lock-only` there, check the Linux binaries are still
+listed, copy the lockfile back, then `npm install` locally.
 
 ## Local dev
 

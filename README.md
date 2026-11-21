@@ -1,6 +1,8 @@
 # Trimly admin - 9800000099
 
 > **New to this codebase?** Read [`docs/DEVELOPER-GUIDE.md`](docs/DEVELOPER-GUIDE.md) first: architecture, business rules, API reference, deploy and how-tos.
+>
+> **Business / go-to-market?** Start with [`docs/BUSINESS-BRIEF.md`](docs/BUSINESS-BRIEF.md).
 
 
 Marketplace for barbers, salons, beauty parlours & grooming services. Full product spec: [`docs/Trimly-PRD-SRS-v1 updated.md`](docs/Trimly-PRD-SRS-v1%20updated.md).

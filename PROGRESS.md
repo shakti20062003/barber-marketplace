@@ -689,3 +689,19 @@ Founder confirmed Google login and in-app calls work on real phones.
   window, so ms timings were unreliable): on return visits Styles (28
   photos), Account and Home drew 0 photos invisible and never showed
   "Loading…".
+
+## 2026-11-21 — End of day 1: handoff
+
+Tech side of the first release is done and live; the founder will move to
+business discussions in a new session.
+- Added `docs/BUSINESS-BRIEF.md` (what's live, ₹0 cost breakdown and
+  free-tier limits, deferred paid items, founder decisions, open business
+  questions incl. the PRD §11 revenue model, pre-launch checklist, security
+  summary).
+- `CLAUDE.md`: new "Current status & handoff" section at the top (live
+  URLs, env set on Render, founder profile and decisions, business risks:
+  free Postgres expiry, demo seed data on the live site); refreshed "Known
+  gaps" (it was stale: still said no Google login, no rate limiting, Exotel
+  calling); deployment notes (don't set NODE_ENV=production on Render; the
+  package-upgrade lockfile procedure).
+- Linked the brief from README and DEVELOPER-GUIDE.
