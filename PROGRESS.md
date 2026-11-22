@@ -766,3 +766,26 @@ workers for now.
   its query/update logic is correct against the real DB, not just unit-level.
   Test bookings/user deleted afterward; scratch verification scripts were
   temporary (not committed).
+
+## 2026-11-22 — Business discussion: value prop, retention, revenue model
+
+Founder stress-tested the idea directly: real problem or not, why would a
+customer not just go to the salon directly, why would an owner bother, how
+to increase reuse beyond 1–2x/month, what about salons' existing regulars,
+disintermediation risk, how we'd actually collect commission, privacy
+policy, and a custom domain. Discussed in chat, then written up into
+`docs/BUSINESS-BRIEF.md` §5a (honest conclusions: the problem is real for
+salons, partial for customers — mainly new-to-area/comparison-shopping
+cases, not loyal regulars; disintermediation can't be prevented, only
+outcompeted on convenience; reuse needs multi-category breadth + the new
+reminder push, not just one haircut a month) and §5b (a worked revenue
+model: flat salon subscription first since commission can't be collected
+without Razorpay yet and taxes every visit forever including ones the
+platform didn't create; commission added later, only on marketplace-
+acquired *new* customers; illustrative tiers and a worked profit example at
+the PRD's 200-salon year-1 goal). Not yet locked in — needs real salon
+feedback on pricing.
+
+Still to do from this conversation: draft a privacy policy (flagged, not
+written yet — needs lawyer review before publishing, especially under
+India's DPDP Act); walk through buying a domain and adding it to Render.
