@@ -19,7 +19,9 @@ import {
   businessWindowFor,
   dbDateFor,
   fitsWindow,
+  formatSalonTime,
   isBlocking,
+  reminderPresetsFor,
   startOfLocalDay,
   staffWindowsFor,
 } from '../../common/scheduling/schedule.js';
@@ -66,17 +68,8 @@ export class BookingsService {
     private readonly push: PushService,
   ) {}
 
-  /** "Mon 24 Nov, 5:30 pm" in salon time. */
   private when(d: Date): string {
-    return d.toLocaleString('en-IN', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'Asia/Kolkata',
-    });
+    return formatSalonTime(d);
   }
 
   /**
@@ -257,6 +250,7 @@ export class BookingsService {
             // bookings. Only ever returned to the booking's own customer —
             // never in owner/staff payloads.
             otpCode: otp.code,
+            ...reminderPresetsFor(slotStart, new Date()),
           },
         });
         await tx.payment.create({
@@ -487,7 +481,13 @@ export class BookingsService {
       const updated = await this.prisma.$transaction(async (tx) => {
         const result = await tx.booking.update({
           where: { id: bookingId },
-          data: { slotStart: newSlotStart, slotEnd: newSlotEnd, staffId: newStaffId },
+          data: {
+            slotStart: newSlotStart,
+            slotEnd: newSlotEnd,
+            staffId: newStaffId,
+            // Re-arm reminders for the new time (see reminderPresetsFor).
+            ...reminderPresetsFor(newSlotStart, new Date()),
+          },
         });
         await tx.auditLog.create({
           data: {

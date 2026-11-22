@@ -424,6 +424,12 @@ model Booking {
   otpCode             String?
   cancellationReason  String?
   noShowReasonCode    String?
+  // Pre-visit reminder push (FR-10.1: T-24h, T-1h), set once sent so the
+  // polling scheduler never double-sends. Pre-set (not left null) at
+  // create/reschedule time when the slot is already inside that lead
+  // window, so a same-day booking doesn't fire an immediate "reminder".
+  reminder24hSentAt   DateTime?
+  reminder1hSentAt    DateTime?
   createdAt           DateTime            @default(now())
 
   customer User      @relation("BookingCustomer", fields: [customerId], references: [id])

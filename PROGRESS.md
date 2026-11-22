@@ -705,3 +705,64 @@ business discussions in a new session.
   calling); deployment notes (don't set NODE_ENV=production on Render; the
   package-upgrade lockfile procedure).
 - Linked the brief from README and DEVELOPER-GUIDE.
+
+## 2026-11-22 — Customer pre-visit reminder push (FR-10.1: T-24h, T-1h)
+
+Founder asked for reminder push notifications for customers who've booked a
+slot — "like Google Calendar" reminders before the appointment. This was
+already a named gap in CLAUDE.md's "Known gaps" (needs a scheduler, PRD
+§7.2). Plan: add `@nestjs/schedule` (Nest-12-compatible per its peer deps)
+and a polling cron, not BullMQ — this app is a single backend instance on
+Render free tier, so a few-minutes-late reminder beats running Redis-backed
+workers for now.
+
+### Done
+
+- `database/prisma/schema.prisma`: `Booking.reminder24hSentAt` /
+  `reminder1hSentAt` (nullable `DateTime`), migration
+  `20261122061602_add_booking_reminder_timestamps`, applied locally via
+  `prisma migrate dev` against the Docker Postgres and regenerated.
+- `common/scheduling/schedule.ts`: `formatSalonTime` (moved out of
+  `bookings.service.ts`'s private `when()`, now shared), `REMINDER_24H_LEAD_MS`
+  / `REMINDER_1H_LEAD_MS`, and `reminderPresetsFor(slotStart, now)` — pre-marks
+  a reminder "sent" at booking create/reschedule time if the slot is already
+  inside that lead window right then, so a same-day booking (or a reschedule
+  to something starting soon) doesn't fire an immediate, misleadingly-early
+  reminder; the cron only ever asks "is it time yet."
+- `bookings.service.ts`: wired `reminderPresetsFor` into `create()` and
+  `reschedule()` (reschedule re-arms both fields for the new `slotStart`).
+- New `modules/bookings/booking-reminders.service.ts`
+  (`BookingRemindersService`, `@Cron(EVERY_5_MINUTES)`): queries `CONFIRMED`
+  bookings with `slotStart` inside the 24h/1h window and the matching field
+  still null, pushes via `PushService.notifyUser`, stamps the field.
+  Registered in `BookingsModule`; `ScheduleModule.forRoot()` added to
+  `app.module.ts`.
+- `backend/package.json`: added `@nestjs/schedule@^12.0.4`. Lockfile
+  regenerated via the documented procedure (copy root + workspace
+  `package.json` + current lockfile to an empty dir, `npm install
+  --package-lock-only` there, checked Linux binaries still listed — 18
+  `linux-x64-gnu` occurrences before and after — then copied back).
+- Unit tests for `reminderPresetsFor` in `schedule.spec.ts` (3 new cases:
+  far-out booking leaves both unset, 2h-out pre-marks only the 24h one,
+  30-min-out pre-marks both).
+
+### Verified for real
+
+- `tsc --noEmit`, `oxlint`, unit tests (34/34, was 31) and the `app.e2e-spec`
+  boot test (full `AppModule`, confirms `ScheduleModule` + the new provider
+  resolve in the DI graph, not just type-check) all pass.
+- Built (`nest build`) and booted `dist/main.js` against the local Docker
+  Postgres/Redis. Logged in as a fresh test customer (phone OTP) and created
+  two real bookings via the HTTP API against seeded salon data: one ~39 min
+  out (both `reminder24hSentAt`/`reminder1hSentAt` came back pre-stamped at
+  create time — correct, no legitimate "N hours before" moment was left) and
+  one 3 days out (both came back null — correct, still pending).
+  Then, to test the cron itself without waiting out a real 24h/1h window,
+  directly rewound the 3-day booking's `slotStart` to 50 minutes out with
+  both fields reset to null (simulating time having passed since a real
+  booking's creation) and watched the live, running server: at the next
+  5-minute cron tick (`06:25:00` UTC) both fields flipped to non-null with no
+  errors in the server log — confirms the scheduler is actually running and
+  its query/update logic is correct against the real DB, not just unit-level.
+  Test bookings/user deleted afterward; scratch verification scripts were
+  temporary (not committed).

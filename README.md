@@ -48,12 +48,12 @@ Health check: `GET http://localhost:4000/api/health`.
 
 ## What's stubbed vs. real
 
-Real: auth (OTP + JWT + RBAC), Prisma schema covering the full §8 data model, search ranking (Haversine + configurable weights), slot-hold locking via Redis, booking create/cancel/reschedule/complete/no-show state machine, reviews, admin verification, owner dashboard, the core customer/owner frontend flows.
+Real: auth (OTP + JWT + RBAC), Prisma schema covering the full §8 data model, search ranking (Haversine + configurable weights), slot-hold locking via Redis, booking create/cancel/reschedule/complete/no-show state machine, reviews, admin verification, owner dashboard, the core customer/owner frontend flows, web push (owner alerts, in-app calling, customer pre-visit reminders at T-24h/T-1h — a `@nestjs/schedule` poll, see DEVELOPER-GUIDE §7.2e).
 
 Stubbed with a `TODO` at the integration point — needs real credentials/infra, not more design:
 - Razorpay orders + payouts (webhook signature verification is real; the order-creation call itself is a placeholder)
 - SMS/WhatsApp OTP delivery (currently logged to the console in development)
-- BullMQ job queue for reminders/notifications (currently synchronous no-ops)
+- Waitlist notify-on-cancel and a booking-confirmation push to the customer are still `TODO`-commented, not wired up
 - PostGIS geo-index (search currently does a bounding-box + in-app Haversine calc, sufficient at MVP scale per ADR-003; swap in `ST_DWithin`/GIST once salon density grows)
 
 ## Workspace scripts

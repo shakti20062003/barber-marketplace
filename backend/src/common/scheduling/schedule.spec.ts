@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   LATE_GRACE_MINUTES,
+  REMINDER_1H_LEAD_MS,
+  REMINDER_24H_LEAD_MS,
   breaksFor,
   businessWindowFor,
   fitsWindow,
@@ -8,6 +10,7 @@ import {
   isOpenAt,
   isPastGrace,
   localDayStart,
+  reminderPresetsFor,
   staffWindowsFor,
 } from './schedule.js';
 
@@ -156,5 +159,28 @@ describe('breaks (e.g. lunch) and late closing', () => {
 
   it('is not "open now" during lunch', () => {
     expect(isOpenAt(LATE, new Date(2026, 10, 23, 13, 30))).toBe(false);
+  });
+});
+
+describe('reminderPresetsFor', () => {
+  const now = new Date(2026, 10, 22, 12, 0); // Sun 22 Nov, 12:00
+
+  it('leaves both reminders unset for a booking well over 24h out', () => {
+    const slotStart = new Date(now.getTime() + REMINDER_24H_LEAD_MS + 60_000);
+    expect(reminderPresetsFor(slotStart, now)).toEqual({ reminder24hSentAt: null, reminder1hSentAt: null });
+  });
+
+  it('pre-marks only the 24h reminder once inside that window but outside the 1h one', () => {
+    const slotStart = new Date(now.getTime() + 2 * REMINDER_1H_LEAD_MS); // 2h out
+    const presets = reminderPresetsFor(slotStart, now);
+    expect(presets.reminder24hSentAt).toBe(now);
+    expect(presets.reminder1hSentAt).toBeNull();
+  });
+
+  it('pre-marks both reminders for a same-day booking made less than 1h out', () => {
+    const slotStart = new Date(now.getTime() + 30 * 60_000); // 30 min out
+    const presets = reminderPresetsFor(slotStart, now);
+    expect(presets.reminder24hSentAt).toBe(now);
+    expect(presets.reminder1hSentAt).toBe(now);
   });
 });

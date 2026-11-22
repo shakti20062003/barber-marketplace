@@ -438,6 +438,42 @@ numbers are involved and no telephony provider is needed.
 - The Exotel `CallBridgeService` / `POST /bookings/:id/call` remains for a
   possible paid phone-network option later; the UI uses in-app calls.
 
+### 7.2e Pre-visit reminder push (FR-10.1: T-24h, T-1h) — `modules/bookings/booking-reminders.service.ts`
+
+Customers get a reminder push before a `CONFIRMED` booking — "your
+appointment is coming up" — like a calendar reminder, at **24 hours** and
+**1 hour** before `slotStart`. Added 2026-11-22; previously a named gap.
+
+- **How it fires:** `BookingRemindersService` polls every 5 minutes
+  (`@Cron(EVERY_5_MINUTES)` from `@nestjs/schedule`, registered via
+  `ScheduleModule.forRoot()` in `app.module.ts`) for `CONFIRMED` bookings
+  whose `slotStart` has entered the 24h or 1h lead window and whose
+  `Booking.reminder24hSentAt` / `reminder1hSentAt` is still `null`. It sends
+  via `PushService.notifyUser` and stamps the field so a later poll never
+  re-sends it.
+- **Deliberately a poll, not a job queue:** the PRD (§7.2) suggests BullMQ
+  for scheduled notification jobs, but this app runs one backend instance on
+  Render's free tier — a reminder that's up to ~5 minutes late is an
+  acceptable trade-off for not running Redis-backed workers. Revisit if that
+  stops being true (multi-instance, need-it-to-the-second timing).
+- **Why the lead fields are pre-set, not left null:** `reminderPresetsFor`
+  (`common/scheduling/schedule.ts`) is called from `BookingsService.create()`
+  and `.reschedule()`. If the slot is already inside a lead window *at that
+  moment* (a same-day booking, or a reschedule to something starting soon),
+  that reminder's "N hours before" moment has already passed and will never
+  legitimately occur — so the field is stamped with the current time right
+  away (suppressing it) instead of being left `null`, which would make the
+  poller send it immediately and mislabel a 10-minutes-away booking as "your
+  appointment tomorrow." This mirrors how a calendar app silently drops a
+  reminder whose trigger time already passed when the event was created.
+  Reschedule re-evaluates both fields against the *new* `slotStart`.
+- **Verified:** `schedule.spec.ts` unit-tests `reminderPresetsFor`'s three
+  cases. End-to-end: booked real slots against seeded data via the HTTP API
+  and confirmed the pre-set behavior, then (to avoid waiting out a real 24h
+  window) rewound a booking's `slotStart` to simulate time passing and
+  watched the live cron flip both fields at the next 5-minute tick with no
+  server errors.
+
 ### 7.3 Search and ranking — `businesses.service.ts`
 
 A bounding-box pre-filter in SQL, then exact Haversine distance and weighted
@@ -658,7 +694,7 @@ Frontend conventions:
 | `businesses` | `workingHours` (JSON), `lat`, `lng`, `address`, `verificationStatus`, `lastBookingCutoffMinutes`, `cancellationPolicy` | Only `VERIFIED` is public |
 | `services` | `price`, `durationMinutes`, `imageUrl`, `active` | |
 | `staff` / `staff_availability` / `staff_availability_overrides` | weekly windows, per-date overrides | No windows means salon hours |
-| `bookings` | `slotStart`, `slotEnd`, `status`, `otpHash`, `otpCode`, `staffId` | `slotEnd` includes add-ons |
+| `bookings` | `slotStart`, `slotEnd`, `status`, `otpHash`, `otpCode`, `staffId`, `reminder24hSentAt`, `reminder1hSentAt` | `slotEnd` includes add-ons; reminder fields set by §7.2e |
 | `booking_add_ons` | `bookingId`, `serviceId`, `price`, `durationMinutes` | Price copied at the time it's added |
 | `payments` | `amount`, `status`, `provider` (`cash`/`razorpay`) | Amount grows with add-ons while unpaid |
 | `push_subscriptions` | `userId`, `endpoint` (unique), `p256dh`, `auth` | Devices receiving web push |
@@ -714,7 +750,7 @@ Controls in place. **Keep them when changing code.**
 | Online payment | Disabled end to end | Razorpay order creation in `bookings.service.ts`, then remove `assertPaymentMethodAvailable` and the disabled button |
 | Calling | Free in-app WebRTC calls live (signalling tested); real two-phone audio not yet tested | Test on two phones; add TURN if some networks fail. Exotel phone-network masking is still optional/paid |
 | SMS | None (phone OTP is test-only) | DLT-registered SMS provider (paid) when affordable; then `PHONE_LOGIN=on` with real SMS and `NODE_ENV=production` |
-| Notifications | Owner push alerts (book/change/cancel/add-on) live; customer gets "salon cancelled" | Customer reminders before visits, waitlist alerts, SMS fallback: needs a scheduler / job queue (BullMQ, PRD §7.2) |
+| Notifications | Owner push alerts (book/change/cancel/add-on), customer "salon cancelled", and customer pre-visit reminders (T-24h/T-1h, §7.2e) live | Waitlist alerts, SMS fallback, a booking-confirmation push to the customer (still TODO in `bookings.service.ts`) |
 | Home-service bookings | Not started (founder wants to discuss first: privacy/safety, stylist-wise pricing, payments) | Schema fields exist (`serviceLocationType`, `HomeServiceArea`) |
 | Image storage | Inline data URLs in Postgres | Cloudinary/S3 |
 | Rate limiting | Only OTP routes | `@nestjs/throttler` doesn't support Nest 12 yet |

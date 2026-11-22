@@ -108,7 +108,9 @@ hitting problems:
   server-side (see "Known gaps" below; OTP send/verify has its own
   hand-rolled Redis-based rate limiting regardless). Before adding any
   `@nestjs/*` ecosystem package, check its peer-dep range supports
-  `^12.0.0` first — several don't yet.
+  `^12.0.0` first — several don't yet. `@nestjs/schedule` (added 2026-11-22
+  for pre-visit booking reminders) does: `^12.0.4` lists `@nestjs/core`
+  `^11.0.0 || ^12.0.0` as a peer dep.
   - Uses **vitest** (not jest) and **oxlint** (not eslint) — that's the
     Nest 12 CLI default now. `npm run test` / `npm run lint` in `backend/`
     use these.
@@ -286,6 +288,28 @@ actually resolves through the workspace symlink.
     shows "Pay online — coming soon", because Razorpay order creation is
     still a stub and a PAY_NOW booking would sit PENDING holding the slot.
     Remove both once payments are live.
+  - **Pre-visit reminder push** (added 2026-11-22, FR-10.1: T-24h, T-1h —
+    "your appointment is coming up", like a calendar reminder):
+    `BookingRemindersService` (`modules/bookings/booking-reminders.service.ts`)
+    polls every 5 min (`@Cron(EVERY_5_MINUTES)`, `ScheduleModule.forRoot()` in
+    `app.module.ts`) for `CONFIRMED` bookings whose `slotStart` has entered
+    the 24h or 1h lead window and whose `Booking.reminder24hSentAt` /
+    `reminder1hSentAt` is still null, pushes to the customer via
+    `PushService.notifyUser`, and stamps the field so it never double-sends.
+    Deliberately a poll, not BullMQ (PRD §7.2 suggests a job queue) — this
+    runs as a single backend instance on Render's free tier, so a
+    few-minutes-late reminder is an acceptable trade-off for not running
+    Redis-backed workers; revisit if that stops being true.
+    `reminderPresetsFor` (`common/scheduling/schedule.ts`) pre-marks a
+    reminder sent at booking create/reschedule time if the slot is already
+    inside that lead window right then (a same-day booking, or a reschedule
+    to something starting soon) — otherwise a same-day booking would fire an
+    immediate "24 hours before" reminder instead of correctly having missed
+    that moment, the way a calendar app skips a reminder whose trigger time
+    already passed when the event was created. Reschedule re-arms both
+    fields from the new `slotStart` the same way. Needs `@nestjs/schedule`
+    (added as a dependency for this; Nest 12-compatible, no Redis/queue
+    needed since it's just in-process `setInterval`-style scheduling).
 - **Owner salon setup** (added 2026-11-15): `OwnerBusinessesController` now
   has `GET /owner/businesses/:id` (`BusinessesService.findForOwner`) —
   returns full business detail (services/staff/media) regardless of
@@ -443,9 +467,11 @@ TODO-commented at their call sites (search `TODO` in `backend/src`):
 - **Calling**: free in-app WebRTC calls are live and work between real phones.
   No TURN relay is configured; add one (env `TURN_*`) if some mobile networks
   fail. Exotel phone-network masking code exists but is unused/unconfigured.
-- **Notifications**: owner push alerts (book / change / cancel / add-ons) and
-  call ringing are live. Missing: customer reminders before visits, waitlist
-  alerts, SMS fallback. These need a scheduler / job queue (BullMQ, PRD §7.2).
+- **Notifications**: owner push alerts (book / change / cancel / add-ons),
+  call ringing, and customer pre-visit reminder push (T-24h, T-1h, added
+  2026-11-22) are live. Missing: waitlist alerts, SMS fallback, and a
+  confirmation push to the customer right after booking (still TODO-commented
+  in `bookings.service.ts`'s `create()`).
 - **Photos** are stored inline in Postgres as data URLs (no object storage).
 - **Not built:** home-service booking (V2, discuss first; schema fields
   reserved), loyalty / referral / wallet (V2/V3), per-stylist shift editor

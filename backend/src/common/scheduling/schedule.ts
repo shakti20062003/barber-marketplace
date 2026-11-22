@@ -18,7 +18,43 @@ export const LATE_GRACE_MINUTES = 10;
 /** Slot start times are offered on this grid (independent of service duration). */
 export const SLOT_STEP_MINUTES = 15;
 
+/** "Mon 24 Nov, 5:30 pm" in salon time — used by push notification bodies. */
+export function formatSalonTime(d: Date): string {
+  return d.toLocaleString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: DEFAULT_TIMEZONE,
+  });
+}
+
 export const BLOCKING_STATUSES: BookingStatus[] = ['PENDING', 'CONFIRMED', 'IN_PROGRESS'];
+
+/** Pre-visit reminder lead times (FR-10.1: T-24h, T-1h), like a calendar reminder. */
+export const REMINDER_24H_LEAD_MS = 24 * 60 * 60 * 1000;
+export const REMINDER_1H_LEAD_MS = 60 * 60 * 1000;
+
+/**
+ * Whether each pre-visit reminder still has a legitimate future trigger
+ * moment for a booking at `slotStart`, evaluated at `now` (booking create
+ * or reschedule time). If the slot is already inside a lead window right
+ * now — a same-day booking, or a reschedule to something starting soon —
+ * that reminder's "N hours before" moment never occurs, so it's pre-marked
+ * sent (`now`) rather than left `null`, which would make
+ * `BookingRemindersService`'s poll fire it immediately instead of skipping
+ * it, the way a calendar app skips a reminder whose moment already passed
+ * when the event was created.
+ */
+export function reminderPresetsFor(slotStart: Date, now: Date) {
+  const untilSlot = slotStart.getTime() - now.getTime();
+  return {
+    reminder24hSentAt: untilSlot <= REMINDER_24H_LEAD_MS ? now : null,
+    reminder1hSentAt: untilSlot <= REMINDER_1H_LEAD_MS ? now : null,
+  };
+}
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
