@@ -268,6 +268,28 @@ export interface MyBooking {
   confirmationCode: string | null;
 }
 
+/** GET /owner/businesses/:id/bookings — full history (all statuses/time), paginated. */
+export interface OwnerBookingHistoryItem {
+  id: string;
+  slotStart: string;
+  slotEnd: string;
+  status: BookingStatus;
+  serviceLocationType: 'IN_SALON' | 'HOME_SERVICE';
+  service: { name: string; price: number };
+  customer: { name: string };
+  staff: { name: string } | null;
+  totalAmount: number;
+  address: string | null;
+  createdAt: string;
+}
+
+export interface OwnerBookingHistory {
+  bookings: OwnerBookingHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 /** GET /staff/me — a barber's own profile. */
 export interface StaffMe extends Staff {
   engagedUntil: string | null;

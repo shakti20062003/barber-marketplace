@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RateLimit } from '../../common/rate-limit/rate-limit.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import { BusinessesService } from './businesses.service.js';
+import { BookingsService } from '../bookings/bookings.service.js';
 import {
   createBusinessSchema,
   updateBusinessSchema,
@@ -18,7 +19,10 @@ import { createMediaSchema, type CreateMediaDto } from './dto/media.dto.js';
 @Controller('owner')
 @Roles('OWNER')
 export class OwnerBusinessesController {
-  constructor(private readonly businesses: BusinessesService) {}
+  constructor(
+    private readonly businesses: BusinessesService,
+    private readonly bookings: BookingsService,
+  ) {}
 
   @Get('businesses')
   listMine(@CurrentUser() user: AuthenticatedUser) {
@@ -84,6 +88,20 @@ export class OwnerBusinessesController {
   @Get('businesses/:id/dashboard')
   dashboard(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.businesses.ownerDashboard(user.id, id);
+  }
+
+  /** Full booking history (every status, all time), paginated — distinct from the live `dashboard` view above. */
+  @Get('businesses/:id/bookings')
+  bookingHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.bookings.findForOwner(id, user.id, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @Get('businesses/:id')

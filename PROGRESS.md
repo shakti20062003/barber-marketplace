@@ -7,6 +7,64 @@ record even if interrupted) and fill it in as work completes. See
 
 ---
 
+## 2026-11-28 (4) — Founder bug reports after trying Phase 2 for real
+
+Founder tested Phase 2 (previous entry) and reported four issues in one
+message (informal Hindi-English, as usual): owners can't see booking
+history, barber phone login said "not available" on the live site, a
+staff member's phone didn't show back in the field after saving, and
+owners had no way to edit or remove a barber. All four fixed:
+
+- **Owner booking history**: `BookingsService.findForOwner()` (new) +
+  `GET /owner/businesses/:id/bookings?page=&limit=` (paginated, every
+  status, oldest included — distinct from `ownerDashboard()`'s today+7-day
+  live view). New `/owner/bookings` page, linked from `/owner`. The
+  underlying data was never actually being deleted — bookings just had no
+  owner-facing endpoint to read them back; this is the minimum needed now
+  so a fuller analytics dashboard has something to build on later.
+- **Barber phone login blocked in production**: `PHONE_LOGIN=off` (set
+  deliberately so strangers can't log in as any customer/owner without real
+  SMS) was also blocking `/auth/otp/verify-staff`, and barbers have no
+  Google alternative — so the feature from the previous entry couldn't
+  actually be used on the live site. Asked the founder how to handle this
+  (phone login graduates from "testing-only" to "live but accepted risk,
+  scoped to barbers" — a real trade-off, not something to silently decide);
+  they chose to turn it on for barbers. Added a separate
+  `STAFF_PHONE_LOGIN` env flag (defaults **on** even when `PHONE_LOGIN` is
+  off) — `auth.service.ts`'s `sendOtp()` now checks whether the phone is a
+  registered `Staff` number and applies the matching gate. Lower risk than
+  open customer/owner phone login because a `Staff` phone only exists once
+  an owner has already assigned it — not open self-registration. Verified
+  all three combinations by booting the backend with different env
+  overrides: `PHONE_LOGIN=off` alone blocks customer/owner but not staff;
+  adding `STAFF_PHONE_LOGIN=off` blocks staff too.
+- **Staff phone field going blank after saving**: `owner/manage/page.tsx`
+  cleared the phone draft to `''` on save instead of removing the key —
+  `staffPhoneDrafts[s.id] ?? s.phone ?? ''` doesn't fall through to
+  `s.phone` once the draft is an explicit empty string (`??` only falls
+  through on `null`/`undefined`). Fixed by deleting the draft key instead.
+- **Owner can edit/remove a barber**: `PATCH .../staff/:staffId` already
+  accepted `name`/`experienceYears`/`specializations`/`languages`/`active`
+  server-side — only the UI was missing. Added an inline edit panel per
+  staff row and a Remove/Restore toggle (soft delete via `active: false`,
+  not a hard delete — `Booking.staffId` has no cascade, so a staff member
+  with booking history can't be hard-deleted without breaking that history,
+  which is exactly what the first fix above is trying to preserve).
+  Confirmation is an inline Yes/Cancel panel, not `window.confirm()` — a
+  native dialog blocks the whole page on mobile, and also broke the Claude
+  in Chrome browser-automation session mid-verification (CDP input
+  dispatch times out while a JS dialog is open), which is exactly the kind
+  of thing a mobile-first product shouldn't ship anyway.
+
+Verified: vitest (38/38 unchanged), `tsc`/lint/`next build` clean both
+sides, a scripted API run confirming booking history + phone
+persistence + edit + deactivate/reactivate + the three `PHONE_LOGIN`/
+`STAFF_PHONE_LOGIN` combinations, and a real browser pass (fresh tab after
+the dialog incident) confirming the phone field now round-trips correctly
+and the inline Remove → Restore flow works with no console errors.
+
+---
+
 ## 2026-11-28 (3) — Phase 2: barber accounts + specific-barber home-visit booking
 
 Phase 2 of the founder's original ask (Phase 1, the premium redesign,

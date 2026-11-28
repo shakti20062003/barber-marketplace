@@ -158,7 +158,18 @@ actually resolves through the workspace symlink.
   ID token verified in `modules/auth/google-id-token.ts` with Node crypto;
   needs `GOOGLE_CLIENT_ID`). Phone OTP is test-only: no SMS exists, so the
   code is shown on screen. **`PHONE_LOGIN=off` must be set in production**
-  once Google works, or anyone can log in as any number. Uniqueness:
+  once Google works, or anyone can log in as any customer/owner number.
+  Barber login is gated **separately** by `STAFF_PHONE_LOGIN` (defaults
+  **on** even when `PHONE_LOGIN=off`, set live since 2026-11-28 — barbers
+  have no Google option, and a `Staff` phone only exists once an owner has
+  already assigned it, so it isn't open self-registration the way
+  customer/owner phone login is; the founder explicitly accepted the
+  smaller residual risk — someone who already knows a specific barber's own
+  phone number, which is never shown publicly — rather than leave the whole
+  feature unusable without paid SMS). `auth.service.ts`'s `sendOtp()`
+  checks whether the number belongs to a registered `Staff` row and applies
+  the matching flag; `verifyOtp()`/`verifyStaffOtp()` each re-check their
+  own flag before consuming the code. Uniqueness:
   `users.googleSub`, `phone` and `email` are unique; `PATCH /users/me`
   returns 409 on a taken number; `POST /auth/google/link` attaches Google to an
   existing account. Admin via linking or `ADMIN_EMAILS`. OTP hashed (sha256) in Redis, 5 min TTL,
@@ -381,6 +392,25 @@ actually resolves through the workspace symlink.
   (`bookings.service.ts`'s `alertOwner()`). No new booking status, no
   travel-fee calc (`travelFeeBase`/`travelFeePerKm` stay unused), no
   payment changes.
+- **Owner booking history** (added 2026-11-28): `GET
+  /owner/businesses/:id/bookings?page=&limit=` (`BookingsService.findForOwner()`)
+  returns every booking for that salon, any status, oldest included,
+  paginated — distinct from `ownerDashboard()`, which only covers today +
+  the next 7 days for the live operational view. Frontend: `/owner/bookings`.
+  Nothing was ever being deleted from `Booking` before this — the gap was
+  purely the missing read endpoint.
+- **Staff edit/soft-delete** (added 2026-11-28): owner Manage → staff rows
+  now have an Edit panel (name/experience/specializations/languages —
+  `PATCH .../staff/:staffId` already accepted these, only the UI was
+  missing) and a Remove/Restore toggle. "Remove" sets `Staff.active =
+  false`, never a hard delete: `Booking.staffId` has no `onDelete: Cascade`,
+  so a staff member with booking history can't be hard-deleted without
+  breaking that history anyway. `findForOwner()`'s staff list has no
+  `active` filter, so a removed staff member still shows (dimmed) with a
+  Restore button. Confirmation is an inline Yes/Cancel, not
+  `window.confirm()` — besides being a bad mobile pattern, a native dialog
+  blocks the whole page and broke Claude-in-Chrome browser automation
+  mid-verification (CDP input stops responding while a JS dialog is open).
 - **Admin console**: every stat tile on `/admin` is clickable and loads its
   list: `GET /admin/businesses?status=PENDING|VERIFIED|REJECTED`,
   `GET /admin/users?role=CUSTOMER|OWNER` and `GET /admin/bookings` (latest 200).

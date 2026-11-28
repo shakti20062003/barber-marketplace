@@ -183,7 +183,8 @@ to start if a required one is missing.
 | `PORT` | | Default `4000` |
 | `NODE_ENV` | | `development` returns `devOtp` (see above) |
 | `GOOGLE_CLIENT_ID` | for Google login | OAuth 2.0 **Web application** client id from Google Cloud Console (free). Add the web app's URL (and `http://localhost:3000`) under *Authorized JavaScript origins*. |
-| `PHONE_LOGIN` | | `off` disables phone-OTP login. **Set `off` in production once Google works**: without SMS the OTP is shown on screen, so anyone could log in as any number, admin included. Default `on`. |
+| `PHONE_LOGIN` | | `off` disables phone-OTP login for customers/owners. **Set `off` in production once Google works**: without SMS the OTP is shown on screen, so anyone could log in as any number, admin included. Default `on`. |
+| `STAFF_PHONE_LOGIN` | | Separate gate for barber login only (`/auth/otp/verify-staff`). Defaults `on` even when `PHONE_LOGIN=off` — a `Staff.phone` must already be assigned by the salon owner, so it isn't open self-registration. Set `off` to also block barber phone login. |
 | `ADMIN_EMAILS` | | Comma-separated Google emails that sign in as (or link to) the admin account |
 | `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` | optional | TURN relay for in-app calls where direct WebRTC fails (free tiers exist) |
 | `TZ` | strongly recommended | `Asia/Kolkata` (main.ts defaults it if unset) |
@@ -428,10 +429,12 @@ with a local fake push service that decrypts what we send.
   `Staff` row a `phone` (`PATCH /owner/businesses/:id/staff/:staffId`,
   checked unique against both `User` and `Staff`). `POST
   /auth/otp/verify-staff {phone, code}` reuses the same on-screen-OTP
-  mechanics as customer/owner login (same `PHONE_LOGIN` gate), but 403s if
-  no `Staff` row has that phone, and links `Staff.userId` on first success
-  instead of taking a `role`/`name` from the request — a `STAFF` account's
-  identity is entirely the salon's own `Staff` row, never user input.
+  mechanics as customer/owner login, gated by its own `STAFF_PHONE_LOGIN`
+  flag (defaults on even when `PHONE_LOGIN=off` — live since 2026-11-28, see
+  env table above), but 403s if no `Staff` row has that phone, and links
+  `Staff.userId` on first success instead of taking a `role`/`name` from the
+  request — a `STAFF` account's identity is entirely the salon's own
+  `Staff` row, never user input.
   Reassigning a staff member's phone to a new number clears that row's
   `userId` link — otherwise the next person to verify the new number would
   log into the previous barber's account.
@@ -700,8 +703,9 @@ Frontend conventions:
 | `GET/POST /owner/businesses` | owner | List / create my salon |
 | `GET/PATCH /owner/businesses/:id` | owner | Full detail (any status) / update (incl. `lat`, `lng`, `address`, `workingHours`, `lastBookingCutoffMinutes`) |
 | `GET /owner/businesses/:id/dashboard` | owner | Today's bookings (+ `lateNoShowCandidate`), revenue, cancellations |
+| `GET /owner/businesses/:id/bookings?page=&limit=` | owner | Full booking history, every status/time, paginated — added 2026-11-28, distinct from `dashboard` above |
 | `POST /owner/businesses/:id/services` · `PATCH …/services/:serviceId` | owner | Services (incl. `imageUrl`, `active`) |
-| `POST /owner/businesses/:id/staff` · `PATCH …/staff/:staffId` | owner | Staff |
+| `POST /owner/businesses/:id/staff` · `PATCH …/staff/:staffId` | owner | Staff (`PATCH` also accepts `active` — soft delete/restore, added 2026-11-28) |
 | `POST /owner/businesses/:id/media` · `DELETE …/media/:mediaId` | owner | Salon photos (URL or uploaded data URL) |
 | `GET /admin/stats` | admin | Tile counts |
 | `GET /admin/businesses?status=PENDING\|VERIFIED\|REJECTED` | admin | Salons by status |

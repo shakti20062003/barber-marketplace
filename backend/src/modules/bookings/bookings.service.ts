@@ -380,6 +380,56 @@ export class BookingsService {
     }));
   }
 
+  /**
+   * Full booking history for a salon's own owner — every status, oldest
+   * bookings included, paginated. Distinct from `ownerDashboard()`, which
+   * only covers today + the next 7 days for the live operational view.
+   */
+  async findForOwner(businessId: string, ownerUserId: string, { page = 1, limit = 20 }: { page?: number; limit?: number } = {}) {
+    const business = await this.prisma.business.findUnique({ where: { id: businessId }, select: { ownerUserId: true } });
+    if (!business) throw new NotFoundException('Business not found');
+    if (business.ownerUserId !== ownerUserId) throw new ForbiddenException('You do not own this business');
+
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(100, Math.max(1, limit));
+
+    const [bookings, total] = await Promise.all([
+      this.prisma.booking.findMany({
+        where: { businessId },
+        orderBy: { slotStart: 'desc' },
+        skip: (safePage - 1) * safeLimit,
+        take: safeLimit,
+        include: {
+          service: { select: { name: true, price: true } },
+          customer: { select: { name: true } },
+          staff: { select: { name: true } },
+          payment: { select: { amount: true } },
+          address: { select: { formattedAddress: true } },
+        },
+      }),
+      this.prisma.booking.count({ where: { businessId } }),
+    ]);
+
+    return {
+      bookings: bookings.map((b) => ({
+        id: b.id,
+        slotStart: b.slotStart,
+        slotEnd: b.slotEnd,
+        status: b.status,
+        serviceLocationType: b.serviceLocationType,
+        service: { name: b.service.name, price: b.service.price },
+        customer: { name: b.customer.name },
+        staff: b.staff ? { name: b.staff.name } : null,
+        totalAmount: b.payment?.amount ?? b.service.price,
+        address: b.address?.formattedAddress ?? null,
+        createdAt: b.createdAt,
+      })),
+      total,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
   private async loadForActor(bookingId: string) {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },

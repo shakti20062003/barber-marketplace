@@ -34,9 +34,18 @@ export const envSchema = z.object({
 
   // Sign in with Google (free). OAuth "Web application" client id from Google Cloud.
   GOOGLE_CLIENT_ID: z.string().optional(),
-  // 'off' disables phone-OTP login (do this in production until SMS exists:
-  // the OTP is shown on screen, so anyone could log in as any number).
+  // 'off' disables phone-OTP login for customers/owners (do this in
+  // production until SMS exists: the OTP is shown on screen, so anyone
+  // could log in as any number).
   PHONE_LOGIN: z.enum(['on', 'off']).optional(),
+  // Separate flag for barber login (also on-screen OTP, same mechanism).
+  // Defaults to 'on' even when PHONE_LOGIN is off: a Staff phone must
+  // already be assigned by the salon owner before anyone can log in with
+  // it (no open self-registration like customer/owner phone login), so the
+  // founder accepted the smaller residual risk — someone who already knows
+  // a specific barber's private phone number — to keep barber login working
+  // without paid SMS.
+  STAFF_PHONE_LOGIN: z.enum(['on', 'off']).optional(),
   // Comma-separated Google emails that become/link the admin account.
   ADMIN_EMAILS: z.string().optional(),
 

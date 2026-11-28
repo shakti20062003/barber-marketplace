@@ -61,6 +61,16 @@ export class AuthService {
     return (this.config.get<string>('PHONE_LOGIN') ?? 'on').toLowerCase() !== 'off';
   }
 
+  /**
+   * Barber login is gated separately from customer/owner phone login: a
+   * Staff phone must already be assigned by the salon owner, so it isn't
+   * open self-registration the way customer/owner phone login is. Defaults
+   * to on even when PHONE_LOGIN=off.
+   */
+  staffPhoneLoginEnabled(): boolean {
+    return (this.config.get<string>('STAFF_PHONE_LOGIN') ?? 'on').toLowerCase() !== 'off';
+  }
+
   methods() {
     const clientId = this.googleClientId();
     return { google: clientId ? { clientId } : null, phone: this.phoneLoginEnabled() };
@@ -198,7 +208,12 @@ export class AuthService {
   }
 
   async sendOtp({ phone }: SendOtpDto): Promise<{ sent: true; devOtp?: string }> {
-    if (!this.phoneLoginEnabled()) {
+    // A number already assigned as a Staff login goes through the barber
+    // gate, not the customer/owner one — the two can be toggled
+    // independently (see staffPhoneLoginEnabled()).
+    const staffPhone = await this.prisma.staff.findUnique({ where: { phone }, select: { id: true } });
+    const enabled = staffPhone ? this.staffPhoneLoginEnabled() : this.phoneLoginEnabled();
+    if (!enabled) {
       throw new ForbiddenException('Phone login is not available yet. Please continue with Google.');
     }
     const sends = await this.redis.incr(this.rateLimitKey(phone));
@@ -232,14 +247,11 @@ export class AuthService {
   }
 
   /**
-   * Redis lookup → attempts check → hash check → single-use delete. Shared
-   * by the customer/owner verify endpoint and the staff one below, so both
-   * enforce the same expiry/attempts/rate-limit rules identically.
+   * Redis lookup → attempts check → hash check → single-use delete. Which
+   * phone-login gate applies is the caller's job (verifyOtp vs
+   * verifyStaffOtp) — this just consumes whatever code was already sent.
    */
   private async consumeOtp(phone: string, code: string): Promise<void> {
-    if (!this.phoneLoginEnabled()) {
-      throw new ForbiddenException('Phone login is not available yet. Please continue with Google.');
-    }
     const raw = await this.redis.get(this.otpKey(phone));
     if (!raw) {
       throw new BadRequestException('OTP expired or was never requested. Request a new one.');
@@ -269,6 +281,9 @@ export class AuthService {
   }
 
   async verifyOtp({ phone, code, name, role }: VerifyOtpDto) {
+    if (!this.phoneLoginEnabled()) {
+      throw new ForbiddenException('Phone login is not available yet. Please continue with Google.');
+    }
     await this.consumeOtp(phone, code);
 
     let user = await this.prisma.user.findUnique({ where: { phone } });
@@ -299,6 +314,9 @@ export class AuthService {
    * someone, never a public "I am a barber" signup).
    */
   async verifyStaffOtp({ phone, code }: VerifyStaffOtpDto) {
+    if (!this.staffPhoneLoginEnabled()) {
+      throw new ForbiddenException('Phone login is not available yet. Please continue with Google.');
+    }
     await this.consumeOtp(phone, code);
 
     const staff = await this.prisma.staff.findUnique({ where: { phone } });

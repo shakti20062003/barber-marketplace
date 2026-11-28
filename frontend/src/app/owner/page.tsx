@@ -426,6 +426,12 @@ export default function OwnerPage() {
       >
         Manage photos, services, staff &amp; location →
       </Link>
+      <Link
+        href="/owner/bookings"
+        className="mt-2 block rounded-xl border border-border px-4 py-3 text-center text-sm font-semibold hover:bg-brand-tint"
+      >
+        View booking history →
+      </Link>
 
       <BookingAlerts />
       <AccountLinks />

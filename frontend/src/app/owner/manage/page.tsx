@@ -238,6 +238,14 @@ export default function OwnerManagePage() {
     homeServiceCapable: false,
   });
   const [staffPhoneDrafts, setStaffPhoneDrafts] = useState<Record<string, string>>({});
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [confirmRemoveStaffId, setConfirmRemoveStaffId] = useState<string | null>(null);
+  const [staffEditDraft, setStaffEditDraft] = useState({
+    name: '',
+    experienceYears: '',
+    specializations: '',
+    languages: '',
+  });
   const [photoUrl, setPhotoUrl] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
   // Which action is in flight, so each button shows its own progress
@@ -252,7 +260,9 @@ export default function OwnerManagePage() {
     | 'servicePhoto'
     | 'staff'
     | 'staffPhoto'
-    | 'staffPhone';
+    | 'staffPhone'
+    | 'staffEdit'
+    | 'staffActive';
   const [busy, setBusy] = useState<BusyAction | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [location, setLocation] = useState<{ lat: string; lng: string; address: string }>({ lat: '', lng: '', address: '' });
@@ -379,6 +389,70 @@ export default function OwnerManagePage() {
     }
   }
 
+  function startEditingStaff(s: OwnerBusinessDetail['staff'][number]) {
+    setEditingStaffId(s.id);
+    setStaffEditDraft({
+      name: s.name,
+      experienceYears: s.experienceYears != null ? String(s.experienceYears) : '',
+      specializations: (s.specializations ?? []).join(', '),
+      languages: (s.languages ?? []).join(', '),
+    });
+  }
+
+  async function saveStaffEdit(staffId: string) {
+    if (!token || !business) return;
+    if (!staffEditDraft.name.trim()) return;
+    setBusy('staffEdit');
+    setError(null);
+    try {
+      await apiFetch(`/owner/businesses/${business.id}/staff/${staffId}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({
+          name: staffEditDraft.name.trim(),
+          experienceYears: staffEditDraft.experienceYears ? Number(staffEditDraft.experienceYears) : undefined,
+          specializations: staffEditDraft.specializations
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          languages: staffEditDraft.languages
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+        }),
+      });
+      setEditingStaffId(null);
+      reload(business.id, token);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save those changes');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Soft delete: a staff member with past bookings can't be hard-deleted
+  // (their history must stay intact), so "remove" deactivates them instead —
+  // they drop out of booking/search but the owner can reactivate any time.
+  // Confirmed inline (not window.confirm — a native dialog blocks the whole
+  // page on mobile and is a worse experience than an inline Yes/Cancel).
+  async function toggleStaffActive(staffId: string, active: boolean) {
+    if (!token || !business) return;
+    setBusy('staffActive');
+    setError(null);
+    try {
+      await apiFetch(`/owner/businesses/${business.id}/staff/${staffId}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ active }),
+      });
+      reload(business.id, token);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update that staff member');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function saveStaffPhone(staffId: string) {
     if (!token || !business) return;
     const phone = staffPhoneDrafts[staffId];
@@ -391,7 +465,14 @@ export default function OwnerManagePage() {
         token,
         body: JSON.stringify({ phone }),
       });
-      setStaffPhoneDrafts((d) => ({ ...d, [staffId]: '' }));
+      // Clear the draft entirely (not to '') so the input falls back to
+      // showing the newly-saved `s.phone` from the reloaded business data —
+      // an empty-string draft would otherwise win over `s.phone` forever.
+      setStaffPhoneDrafts((d) => {
+        const next = { ...d };
+        delete next[staffId];
+        return next;
+      });
       reload(business.id, token);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save that phone number');
@@ -735,13 +816,23 @@ export default function OwnerManagePage() {
       <Section title={`Staff (${business.staff.length})`}>
         <div className="divide-y divide-border rounded-xl border border-border bg-surface">
           {business.staff.map((s) => (
-            <div key={s.id} className="space-y-2 p-3 text-sm">
+            <div key={s.id} className={`space-y-2 p-3 text-sm ${!s.active ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-3">
                 <StaffPhotoButton staff={s} busy={busy === 'staffPhoto'} onPhoto={(url) => setStaffPhoto(s.id, url)} />
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">{s.name}</p>
                   {s.experienceYears != null && <p className="text-xs text-muted">{s.experienceYears} yrs</p>}
+                  {(s.specializations.length > 0 || s.languages.length > 0) && (
+                    <p className="truncate text-xs text-muted">
+                      {[s.specializations.join(', '), s.languages.join(', ')].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                 </div>
+                {!s.active && (
+                  <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-muted">
+                    Removed
+                  </span>
+                )}
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                     s.hasLogin ? 'bg-accent-tint text-accent' : 'bg-neutral-100 text-muted'
@@ -750,15 +841,62 @@ export default function OwnerManagePage() {
                   {s.hasLogin ? '✓ Linked' : 'Not linked yet'}
                 </span>
               </div>
-              <label className="flex items-center gap-2 text-xs text-muted">
-                <input
-                  type="checkbox"
-                  checked={s.homeServiceCapable ?? false}
-                  onChange={(e) => toggleStaffHomeService(s.id, e.target.checked)}
-                  className="accent-[var(--brand)]"
-                />
-                Offers home visits
-              </label>
+
+              {editingStaffId === s.id ? (
+                <div className="space-y-2 rounded-lg border border-border bg-brand-tint/30 p-2">
+                  <input
+                    value={staffEditDraft.name}
+                    onChange={(e) => setStaffEditDraft({ ...staffEditDraft, name: e.target.value })}
+                    placeholder="Name"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+                  />
+                  <input
+                    value={staffEditDraft.experienceYears}
+                    onChange={(e) => setStaffEditDraft({ ...staffEditDraft, experienceYears: e.target.value })}
+                    placeholder="Yrs exp."
+                    inputMode="numeric"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+                  />
+                  <input
+                    value={staffEditDraft.specializations}
+                    onChange={(e) => setStaffEditDraft({ ...staffEditDraft, specializations: e.target.value })}
+                    placeholder="Specializations, comma-separated"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+                  />
+                  <input
+                    value={staffEditDraft.languages}
+                    onChange={(e) => setStaffEditDraft({ ...staffEditDraft, languages: e.target.value })}
+                    placeholder="Languages, comma-separated"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveStaffEdit(s.id)}
+                      disabled={busy === 'staffEdit' || !staffEditDraft.name.trim()}
+                      className="flex-1 rounded-lg bg-brand py-1.5 text-xs font-semibold text-brand-foreground disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingStaffId(null)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="flex items-center gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={s.homeServiceCapable ?? false}
+                    onChange={(e) => toggleStaffHomeService(s.id, e.target.checked)}
+                    className="accent-[var(--brand)]"
+                  />
+                  Offers home visits
+                </label>
+              )}
+
               {!s.hasLogin && (
                 <div className="flex gap-2">
                   <input
@@ -774,6 +912,47 @@ export default function OwnerManagePage() {
                   >
                     Save phone
                   </button>
+                </div>
+              )}
+
+              {editingStaffId !== s.id && confirmRemoveStaffId !== s.id && (
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => startEditingStaff(s)}
+                    className="flex-1 rounded-lg border border-border py-1.5 text-xs font-semibold hover:bg-brand-tint"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => (s.active ? setConfirmRemoveStaffId(s.id) : toggleStaffActive(s.id, true))}
+                    disabled={busy === 'staffActive'}
+                    className="flex-1 rounded-lg border border-border py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {s.active ? 'Remove' : 'Restore'}
+                  </button>
+                </div>
+              )}
+              {confirmRemoveStaffId === s.id && (
+                <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-2">
+                  <p className="text-xs text-red-800">Remove {s.name} from your salon? You can add them back any time.</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setConfirmRemoveStaffId(null);
+                        toggleStaffActive(s.id, false);
+                      }}
+                      disabled={busy === 'staffActive'}
+                      className="flex-1 rounded-lg bg-red-600 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Yes, remove
+                    </button>
+                    <button
+                      onClick={() => setConfirmRemoveStaffId(null)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
