@@ -33,6 +33,12 @@ import { RateLimitGuard } from './common/rate-limit/rate-limit.js';
     RedisModule,
     AuthModule,
     UsersModule,
+    // StaffModule before BusinessesModule: Nest/Express registers routes in
+    // import order and matches them in that same order, not by specificity.
+    // StaffController's static `/staff/me*` routes must register before
+    // BusinessesController's `@Get('staff/:id')` public-profile route, or
+    // the wildcard `:id` swallows "me" and every /staff/me* call 404s.
+    StaffModule,
     BusinessesModule,
     BookingsModule,
     ReviewsModule,
@@ -42,7 +48,6 @@ import { RateLimitGuard } from './common/rate-limit/rate-limit.js';
     StylesModule,
     PushModule,
     CallsModule,
-    StaffModule,
     AddressesModule,
   ],
   controllers: [AppController],

@@ -4,6 +4,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import type { BusinessDetail } from '@/lib/types';
 import { directionsUrl, formatHhmm } from '@/lib/image';
 import HoursList from '@/components/HoursList';
+import SmoothImage from '@/components/SmoothImage';
 
 const BADGE_LABEL: Record<string, string> = {
   VERIFIED: '✓ Verified',
@@ -146,10 +147,22 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
             <h2 className="mb-2 text-lg font-semibold">Our stylists</h2>
             <div className="grid gap-3 sm:grid-cols-2">
               {business.staff.map((s) => (
-                <div key={s.id} className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-tint font-semibold text-accent">
-                    {s.name.charAt(0)}
-                  </div>
+                <Link
+                  key={s.id}
+                  href={`/barbers/${s.id}`}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3 active:scale-[0.99]"
+                >
+                  {s.photoUrl ? (
+                    <SmoothImage
+                      src={s.photoUrl}
+                      alt={s.name}
+                      className="h-11 w-11 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-tint font-semibold text-accent">
+                      {s.name.charAt(0)}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <p className="font-medium">{s.name}</p>
                     {s.experienceYears != null && (
@@ -159,7 +172,7 @@ export default async function Page(props: PageProps<'/salons/[id]'>) {
                       <p className="truncate text-xs text-muted">{s.specializations.join(', ')}</p>
                     )}
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </section>

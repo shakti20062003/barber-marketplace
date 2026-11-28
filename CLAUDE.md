@@ -36,11 +36,11 @@ update the matching section there as well as here.
   WebRTC calling instead of Exotel; pay-at-shop only until Razorpay; Style
   Finder shows Great/Good/May-not-suit bands, **never percentages**, and no
   paid AI; all hairstyles open to everyone; home-visit booking of a
-  **specific** barber (never platform-hired) **approved and in progress**
-  since 2026-11-28 — safety is visibility + accountability only (salon's
-  existing verified badge + an owner push naming the barber and address),
-  deliberately no new ID verification, no real distance/polygon checking,
-  no travel fees, no new booking status, no payment work this round.
+  **specific** barber (never platform-hired) **shipped 2026-11-28** — safety
+  is visibility + accountability only (salon's existing verified badge + an
+  owner push naming the barber and address), deliberately no new ID
+  verification, no real distance/polygon checking, no travel fees, no new
+  booking status, no payment work this round.
 - **Known business risks to raise:** Render free Postgres has historically
   expired ~30 days after creation (created ~2026-11-16), so check it; the 12
   demo salons + demo users are fictional seed data still on the live site,
@@ -350,7 +350,21 @@ actually resolves through the workspace symlink.
   min); `isEngaged()` (`common/scheduling/schedule.ts`, next to
   `isBlocking`) is checked alongside overlapping bookings in both
   `staffAvailableForSlot()` and the availability grid. Public profile:
-  `GET /staff/:id` (404s unless the affiliated salon is `VERIFIED`).
+  `GET /staff/:id` (404s unless the affiliated salon is `VERIFIED`) and the
+  salon's own `GET /businesses/:id` staff list both strip `phone`/`userId`/
+  `engagedUntil` before returning — those are a barber's private login
+  details, not public data (a real leak, caught by a browser-less API test,
+  not by `tsc`/lint).
+  **`StaffModule` must stay imported before `BusinessesModule` in
+  `app.module.ts`** — Nest/Express register and match routes in import
+  order, not by specificity, so `BusinessesController`'s `@Get('staff/:id')`
+  wildcard would otherwise swallow literal `/staff/me` requests (treating
+  `"me"` as an `:id`) and 404 every barber-dashboard call. This is a general
+  gotcha for any future route that shares a prefix across two controllers,
+  not just this pair. `updateStaff()` also clears `Staff.userId` whenever an
+  owner actually changes the assigned `phone` — otherwise the next person to
+  verify the new number would silently log into the previous barber's
+  account.
 - **Home-visit booking of a specific barber** (added 2026-11-28): a
   customer can pick a named `Staff` member (`POST /bookings` accepts
   `staffId`, already existed) and, if that salon has any

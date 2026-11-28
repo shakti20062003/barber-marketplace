@@ -451,7 +451,11 @@ export default function AccountPage() {
       router.push('/admin');
       return;
     }
-     
+    if (stored.role === 'STAFF') {
+      router.push('/staff');
+      return;
+    }
+
     setUser(stored);
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps

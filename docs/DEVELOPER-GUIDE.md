@@ -245,6 +245,18 @@ Frontend: only `NEXT_PUBLIC_API_URL`, which is fixed at build time.
 9. **Ownership checks:** any owner endpoint touching a child record
    (service, staff, media) must verify that it belongs to the `:id` business,
    not only that the caller owns `:id`.
+10. **Route registration order matters when two controllers share a
+    prefix.** Nest/Express match routes in the order they're registered
+    (import order in `app.module.ts`), not by specificity — a wildcard
+    `@Get(':id')` registered before a literal `@Get('me')` in a *different*
+    controller under the same prefix will swallow it. `StaffModule` must
+    stay imported before `BusinessesModule` for exactly this reason
+    (`/staff/:id` vs `/staff/me`).
+11. **A public endpoint that spreads a full Prisma row risks leaking private
+    fields added later.** `Staff.phone`/`userId`/`engagedUntil` are a
+    barber's own login details and must never appear in a public response
+    (`GET /businesses/:id`, `GET /staff/:id`) — strip them explicitly rather
+    than relying on a `select` elsewhere in the same service staying in sync.
 
 ---
 
@@ -420,6 +432,9 @@ with a local fake push service that decrypts what we send.
   no `Staff` row has that phone, and links `Staff.userId` on first success
   instead of taking a `role`/`name` from the request — a `STAFF` account's
   identity is entirely the salon's own `Staff` row, never user input.
+  Reassigning a staff member's phone to a new number clears that row's
+  `userId` link — otherwise the next person to verify the new number would
+  log into the previous barber's account.
 
 ### 7.2d In-app calling (free) — `modules/calls`, `app/call/[id]`
 
@@ -767,7 +782,7 @@ Controls in place. **Keep them when changing code.**
 | Calling | Free in-app WebRTC calls live (signalling tested); real two-phone audio not yet tested | Test on two phones; add TURN if some networks fail. Exotel phone-network masking is still optional/paid |
 | SMS | None (phone OTP is test-only) | DLT-registered SMS provider (paid) when affordable; then `PHONE_LOGIN=on` with real SMS and `NODE_ENV=production` |
 | Notifications | Owner push alerts (book/change/cancel/add-on), customer "salon cancelled", and customer pre-visit reminders (T-24h/T-1h, §7.2e) live | Waitlist alerts, SMS fallback, a booking-confirmation push to the customer (still TODO in `bookings.service.ts`) |
-| Home-visit booking of a specific barber | Backend done (barber login/engaged status/portfolio, addresses CRUD, capability + ownership checks, owner accountability push); frontend not started (plan §5–7) | Build the booking-page stylist picker, home-visit toggle/address picker, and the `/staff` barber dashboard |
+| Home-visit booking of a specific barber | Shipped end-to-end 2026-11-28 (barber login/engaged status/portfolio, addresses CRUD, stylist picker, home-visit toggle/address picker, `/staff` dashboard, owner accountability push) | — |
 | Home-service areas (real geo) | Presence-only gate (`hasHomeService`); no radius/polygon check or travel fee | Use `HomeServiceArea.radiusKm`/`polygon`, `travelFeeBase`/`travelFeePerKm` once needed |
 | Image storage | Inline data URLs in Postgres | Cloudinary/S3 |
 | Rate limiting | Only OTP routes | `@nestjs/throttler` doesn't support Nest 12 yet |

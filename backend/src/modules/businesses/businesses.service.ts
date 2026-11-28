@@ -175,6 +175,9 @@ export class BusinessesService {
     const { homeServiceAreas, ...rest } = business;
     return {
       ...rest,
+      // phone/userId/engagedUntil are a barber's own login details, never
+      // public — the salon's own stylist list must never leak them.
+      staff: rest.staff.map(({ phone: _phone, userId: _userId, engagedUntil: _engagedUntil, ...s }) => s),
       hasHomeService: homeServiceAreas.length > 0,
       openNow: isOpenAt(business.workingHours),
       todayHours: todaysHours(business.workingHours),
@@ -195,7 +198,8 @@ export class BusinessesService {
     if (!staff || !staff.active || staff.business.verificationStatus !== 'VERIFIED') {
       throw new NotFoundException('Staff member not found');
     }
-    const { userId: _userId, ...rest } = staff;
+    // phone/userId/engagedUntil are a barber's own login details, never public.
+    const { userId: _userId, phone: _phone, engagedUntil: _engagedUntil, ...rest } = staff;
     return rest;
   }
 
@@ -286,7 +290,12 @@ export class BusinessesService {
     await this.assertOwnership(businessId, ownerUserId);
     const existing = await this.prisma.staff.findUnique({ where: { id: staffId } });
     if (!existing || existing.businessId !== businessId) throw new NotFoundException('Staff member not found');
-    if (dto.phone && dto.phone !== existing.phone) {
+    // Reassigning the login number disconnects whoever was linked to the old
+    // one — otherwise the next person to verify the new number would log
+    // into the previous barber's account (the lookup in verifyStaffOtp()
+    // goes through Staff.userId, which would still point at them).
+    const phoneChanged = dto.phone && dto.phone !== existing.phone;
+    if (phoneChanged) {
       const [takenByUser, takenByStaff] = await Promise.all([
         this.prisma.user.findUnique({ where: { phone: dto.phone } }),
         this.prisma.staff.findUnique({ where: { phone: dto.phone } }),
@@ -295,7 +304,10 @@ export class BusinessesService {
         throw new ConflictException('This phone number is already registered to a different account.');
       }
     }
-    return this.prisma.staff.update({ where: { id: staffId }, data: dto });
+    return this.prisma.staff.update({
+      where: { id: staffId },
+      data: { ...dto, userId: phoneChanged ? null : undefined },
+    });
   }
 
   async addMedia(businessId: string, ownerUserId: string, dto: CreateMediaDto) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { saveSession } from '@/lib/auth-client';
@@ -42,7 +43,14 @@ function LoginForm() {
 
   function finishLogin(result: { accessToken: string; user: CurrentUser }) {
     saveSession(result.accessToken, result.user);
-    const roleHome = result.user.role === 'ADMIN' ? '/admin' : result.user.role === 'OWNER' ? '/owner' : '/account';
+    const roleHome =
+      result.user.role === 'ADMIN'
+        ? '/admin'
+        : result.user.role === 'OWNER'
+          ? '/owner'
+          : result.user.role === 'STAFF'
+            ? '/staff'
+            : '/account';
     router.push(explicitNext ?? roleHome);
   }
 
@@ -154,6 +162,9 @@ function LoginForm() {
             ))}
           </div>
           <p className="mt-1 text-xs text-muted">Only used when creating a new account.</p>
+          <Link href="/staff/login" className="mt-3 block text-center text-sm text-muted underline">
+            Are you a barber? Log in here
+          </Link>
         </div>
       )}
 

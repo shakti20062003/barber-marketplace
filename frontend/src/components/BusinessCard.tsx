@@ -3,7 +3,7 @@ import type { BusinessCard as BusinessCardType } from '@/lib/types';
 import { formatHhmm } from '@/lib/image';
 import SmoothImage from '@/components/SmoothImage';
 
-const BADGE_STYLE: Record<string, { label: string; className: string }> = {
+export const BADGE_STYLE: Record<string, { label: string; className: string }> = {
   VERIFIED: { label: '✓ Verified', className: 'bg-accent-tint text-accent' },
   TOP_RATED: { label: '★ Top Rated', className: 'bg-amber-50 text-amber-700' },
   PREMIUM_PARTNER: { label: 'Premium', className: 'bg-violet-50 text-violet-700' },

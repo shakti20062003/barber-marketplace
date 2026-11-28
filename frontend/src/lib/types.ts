@@ -82,6 +82,33 @@ export interface Staff {
   languages: string[];
   photoUrl: string | null;
   averageRating: number | null;
+  homeServiceCapable?: boolean;
+}
+
+/** Staff row as the owning salon's own owner sees it (Manage → staff list). */
+export interface OwnerStaff extends Staff {
+  active: boolean;
+  phone: string | null;
+  hasLogin: boolean;
+}
+
+export interface PortfolioMedia {
+  id: string;
+  url: string;
+  type: 'PORTFOLIO' | 'BEFORE_AFTER';
+}
+
+/** Public barber profile — GET /staff/:id. */
+export interface StaffDetail extends Staff {
+  business: {
+    id: string;
+    name: string;
+    verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED';
+    trustBadges: TrustBadge[];
+    city: { name: string } | null;
+  };
+  certifications: { id: string; name: string; issuingBody: string | null }[];
+  portfolioMedia: PortfolioMedia[];
 }
 
 export interface ReviewMedia {
@@ -124,6 +151,16 @@ export interface BusinessDetail {
   services: Service[];
   staff: Staff[];
   reviews: Review[];
+  hasHomeService: boolean;
+}
+
+/** Customer's saved home-visit address — GET/POST /addresses. */
+export interface Address {
+  id: string;
+  label: string;
+  lat: number;
+  lng: number;
+  formattedAddress: string;
 }
 
 export interface AvailabilitySlot {
@@ -191,7 +228,7 @@ export interface OwnerBusinessDetail {
   city: { name: string };
   media: { id: string; url: string; type: string }[];
   services: Service[];
-  staff: Staff[];
+  staff: OwnerStaff[];
 }
 
 export interface PendingBusiness {
@@ -229,4 +266,24 @@ export interface MyBooking {
   hasReview: boolean;
   review: { rating: number; text: string | null } | null;
   confirmationCode: string | null;
+}
+
+/** GET /staff/me — a barber's own profile. */
+export interface StaffMe extends Staff {
+  engagedUntil: string | null;
+  business: { id: string; name: string; verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED' };
+  certifications: { id: string; name: string; issuingBody: string | null }[];
+  portfolioMedia: PortfolioMedia[];
+}
+
+/** GET /staff/me/bookings — a thin view of a barber's own bookings. */
+export interface StaffBooking {
+  id: string;
+  slotStart: string;
+  slotEnd: string;
+  status: BookingStatus;
+  serviceLocationType: 'IN_SALON' | 'HOME_SERVICE';
+  business: { id: string; name: string };
+  customerName: string;
+  service: { name: string; durationMinutes: number };
 }

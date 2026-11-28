@@ -19,12 +19,10 @@ Scope deliberately excludes this round: real distance/polygon checks against
 `HomeServiceArea`, travel-fee calculation, any new booking status, any
 payment work, real SMS.
 
-**Status: backend done through plan sections 1–4, plus the backend half of
-section 6 (addresses + home-service exposure); frontend (sections 5, 7, and
-the home-visit UI half of 6) not started yet.** Done so far, each
-type-checked, linted (`oxlint`), and confirmed via a real `nest build` +
-`node dist/main.js` boot (all new routes mapped, DI graph resolves, Prisma
-connects):
+**Status: done — all of plan sections 1–8 shipped and verified end-to-end.**
+Backend pieces below, each type-checked, linted (`oxlint`), and confirmed via
+a real `nest build` + `node dist/main.js` boot (all new routes mapped, DI
+graph resolves, Prisma connects):
 
 - **Schema** (`database/prisma/schema.prisma`, migration
   `20261128120620_add_staff_login_and_engaged_status`, applied via
@@ -75,10 +73,85 @@ connects):
   `findById()` now derives `hasHomeService: boolean` from
   `homeServiceAreas.length > 0` without exposing the raw rows.
 
-Next: frontend — specific-barber picker on the booking page (§5), the
-`/staff` barber dashboard + login page + `Nav`/`MobileTabBar` STAFF
-branches (§7), and the home-visit toggle/address picker on the booking page
-(§6's frontend half) — then a full manual end-to-end pass before pushing.
+**Frontend** (all new/changed, type-checked + `next build` clean):
+
+- `/staff/login` (phone/OTP only, no Google/role/name) + a quiet "Are you a
+  barber?" link from `/login`; post-login routing sends `STAFF` to `/staff`
+  (`login/page.tsx`, `account/page.tsx`'s role-guard).
+- `/staff` barber dashboard: engaged-status buttons (15/30/60/120/240 min +
+  clear), profile edit (experience/specializations/languages), portfolio
+  upload/remove, upcoming/past bookings. `Nav.tsx` and `MobileTabBar.tsx`
+  both got a `STAFF` branch to `/staff` (edited together deliberately — see
+  the "one bug shipped from updating only one of these" gotcha in
+  `CLAUDE.md`).
+- `/barbers/[id]` public profile (SSR): photo, verified badge, salon link,
+  specializations/languages, portfolio grid, sticky "Book this barber" CTA.
+- `salons/[id]/book/page.tsx`: a "Stylist" chip row (reuses the existing
+  availability grid, server-filtered via `staffId`/`homeService` query
+  params rather than duplicating filtering logic client-side); a
+  salon/home-visit "Where" toggle shown only when `business.hasHomeService`;
+  `AddressPicker` (new, reuses `owner/manage`'s location-editor interaction
+  pattern — geolocation, pasted Maps link, live map preview — via shared
+  `lib/location.ts` helpers extracted from both places).
+- `owner/manage/page.tsx`: staff rows gained a photo button, a "✓ Linked" /
+  "Not linked yet" badge, a phone input + save (only shown pre-link), a
+  "Offers home visits" checkbox; the add-staff form gained
+  specializations/languages/homeServiceCapable fields.
+
+**Two real bugs found and fixed during end-to-end verification** (not in the
+original plan — surfaced only once a browser flow +  Postgres-backed tests
+ran for real, consistent with past gotchas in this project where `tsc`/lint
+alone weren't enough):
+
+1. **Route-order 404 on every `/staff/me*` call.** `BusinessesModule` (which
+   owns the public `GET /staff/:id` profile route) was imported before
+   `StaffModule` in `app.module.ts`. NestJS/Express register and match
+   routes in import/declaration order, not by specificity, so `/staff/:id`'s
+   wildcard swallowed `/staff/me` — every barber-dashboard call 404'd with
+   "Staff member not found" (treating literal `"me"` as an `:id`). Fixed by
+   moving `StaffModule` before `BusinessesModule` in `app.module.ts`'s
+   imports, with a comment explaining why the order is load-bearing.
+2. **Phone reassignment didn't release the previous login**, and the public
+   endpoints leaked it. `updateStaff()` let an owner change `Staff.phone`
+   without clearing the old `Staff.userId` link — the next person to verify
+   the *new* number would have logged into the *previous* barber's account.
+   Fixed by clearing `userId` whenever `phone` actually changes. Separately,
+   both `findById()` (salon page) and `findStaffById()` (public barber
+   profile) were spreading the full `Staff` row into public API responses,
+   so a barber's private login `phone`/`userId`/`engagedUntil` were visible
+   to anyone — fixed by stripping those three fields before returning in
+   both places.
+
+**Verified for real**:
+- `npm run test` (vitest): 38/38 passing, incl. 4 new `isEngaged` cases
+  added to `schedule.spec.ts`. The DB-backed behaviors (`findAnyAvailableStaff`'s
+  capability filter, address-ownership check, `verifyStaffOtp`'s three
+  branches) were verified via the scripted/manual run below instead of
+  mocked unit tests — this codebase has no existing Prisma-mocking pattern,
+  and a real-DB run is the stronger check anyway.
+- A scripted Node e2e run against the real local Postgres/Redis + a live
+  `node dist/main.js`, covering: owner assigns a staff phone +
+  `homeServiceCapable`; barber OTP login (first link, repeat login reuses
+  the same user, unregistered phone → 403); `GET/PATCH /staff/me`, engaged
+  status, portfolio add/remove; public `GET /staff/:id`; customer address
+  CRUD; availability grid with `homeService`+`staffId` filters; a home-visit
+  booking rejected when the `addressId` belongs to a different customer
+  (403) and accepted for its owner (201); the booking shows up correctly in
+  `GET /staff/me/bookings` with `serviceLocationType: HOME_SERVICE`.
+- The STAFF-ownership regression test specifically: logged in as a barber
+  from a *different* salon and confirmed `POST /bookings/:id/complete` on
+  the first salon's booking is rejected (403 "Not your salon").
+- A full manual browser pass at phone width (390×844): barber OTP login →
+  `/staff` dashboard; public `/barbers/[id]` profile page; customer login →
+  "Book this barber" → stylist chip pre-selected → Home visit toggle →
+  saved-address picker → slot selection → booking confirmed with OTP shown.
+  No console errors. (One gap: no real `HomeServiceArea` row existed in the
+  seed data to exercise the toggle, so one was added directly in Postgres
+  for this run and removed again afterward — not a seed change.)
+- Owner push-on-booking (`alertOwner()`'s home-visit branch) was code- and
+  path-verified (correct title/body, fires on the real booking above) but
+  not visually confirmed end-to-end — the local test owner account has no
+  subscribed browser/push endpoint in this environment.
 
 ---
 

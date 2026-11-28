@@ -7,6 +7,7 @@ import {
   businessWindowFor,
   fitsWindow,
   isBlocking,
+  isEngaged,
   isOpenAt,
   isPastGrace,
   localDayStart,
@@ -182,5 +183,28 @@ describe('reminderPresetsFor', () => {
     const presets = reminderPresetsFor(slotStart, now);
     expect(presets.reminder24hSentAt).toBe(now);
     expect(presets.reminder1hSentAt).toBe(now);
+  });
+});
+
+describe('isEngaged', () => {
+  const now = new Date(2026, 10, 28, 12, 0); // Sat 28 Nov, 12:00
+
+  it('is false when the barber never set an engaged-until time', () => {
+    expect(isEngaged({ engagedUntil: null }, new Date(2026, 10, 28, 12, 30), now)).toBe(false);
+  });
+
+  it('is false once the engaged window has already elapsed', () => {
+    const engagedUntil = new Date(2026, 10, 28, 11, 0); // in the past relative to `now`
+    expect(isEngaged({ engagedUntil }, new Date(2026, 10, 28, 12, 30), now)).toBe(false);
+  });
+
+  it('blocks a slot that starts before the barber becomes free again', () => {
+    const engagedUntil = new Date(2026, 10, 28, 13, 0);
+    expect(isEngaged({ engagedUntil }, new Date(2026, 10, 28, 12, 30), now)).toBe(true);
+  });
+
+  it('allows a slot that starts at or after the engaged-until time', () => {
+    const engagedUntil = new Date(2026, 10, 28, 13, 0);
+    expect(isEngaged({ engagedUntil }, new Date(2026, 10, 28, 13, 0), now)).toBe(false);
   });
 });

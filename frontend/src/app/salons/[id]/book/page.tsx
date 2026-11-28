@@ -6,7 +6,8 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth-client';
 import { formatHhmm, formatTime } from '@/lib/image';
 import SlotPicker from '@/components/SlotPicker';
-import type { BusinessDetail } from '@/lib/types';
+import AddressPicker from '@/components/AddressPicker';
+import type { Address, BusinessDetail } from '@/lib/types';
 
 const LATE_GRACE_MINUTES = 10;
 
@@ -17,6 +18,9 @@ export default function BookPage() {
 
   const [business, setBusiness] = useState<BusinessDetail | null>(null);
   const [serviceId, setServiceId] = useState(searchParams.get('serviceId') ?? '');
+  const [preferredStaffId, setPreferredStaffId] = useState(searchParams.get('staffId') ?? '');
+  const [homeVisit, setHomeVisit] = useState(false);
+  const [address, setAddress] = useState<Address | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<{ staffId: string; start: string } | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'PAY_NOW' | 'PAY_AT_SHOP'>('PAY_AT_SHOP');
   const [loading, setLoading] = useState(false);
@@ -34,6 +38,12 @@ export default function BookPage() {
   }, [id]);
 
   const service = business?.services.find((s) => s.id === serviceId);
+  const homeServiceStaff = business?.staff.filter((s) => s.homeServiceCapable) ?? [];
+  // A chosen stylist who doesn't do home visits can't stay selected once
+  // Home visit is toggled on.
+  const effectiveStaffId =
+    homeVisit && preferredStaffId && !homeServiceStaff.some((s) => s.id === preferredStaffId) ? '' : preferredStaffId;
+
   async function confirmBooking() {
     const token = getToken();
     if (!token) {
@@ -41,6 +51,10 @@ export default function BookPage() {
       return;
     }
     if (!selectedSlot) return;
+    if (homeVisit && !address) {
+      setError('Pick an address for the home visit first.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -53,6 +67,8 @@ export default function BookPage() {
           staffId: selectedSlot.staffId,
           slotStart: selectedSlot.start,
           paymentMethod,
+          serviceLocationType: homeVisit ? 'HOME_SERVICE' : 'IN_SALON',
+          addressId: homeVisit ? address?.id : undefined,
         }),
       });
       setConfirmation({ bookingId: result.booking.id, otp: result.otp, start: selectedSlot.start });
@@ -134,6 +150,71 @@ export default function BookPage() {
         ))}
       </select>
 
+      {business?.hasHomeService && (
+        <div className="mt-5">
+          <p className="mb-1.5 text-sm font-semibold">Where</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setHomeVisit(false)}
+              className={`rounded-xl border px-3 py-2.5 text-sm font-medium ${
+                !homeVisit ? 'border-brand bg-brand-tint text-brand-dark' : 'border-border bg-surface'
+              }`}
+            >
+              At the salon
+            </button>
+            <button
+              onClick={() => setHomeVisit(true)}
+              className={`rounded-xl border px-3 py-2.5 text-sm font-medium ${
+                homeVisit ? 'border-brand bg-brand-tint text-brand-dark' : 'border-border bg-surface'
+              }`}
+            >
+              🏠 Home visit
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5">
+        <p className="mb-1.5 text-sm font-semibold">Stylist</p>
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+          <button
+            onClick={() => setPreferredStaffId('')}
+            className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-medium ${
+              !effectiveStaffId ? 'border-brand bg-brand text-brand-foreground' : 'border-border bg-surface'
+            }`}
+          >
+            Any available
+          </button>
+          {(homeVisit ? homeServiceStaff : business?.staff ?? []).map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setPreferredStaffId(s.id)}
+              className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-medium ${
+                effectiveStaffId === s.id ? 'border-brand bg-brand text-brand-foreground' : 'border-border bg-surface'
+              }`}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {homeVisit && (
+        <div className="mt-5">
+          <p className="mb-1.5 text-sm font-semibold">Address</p>
+          {getToken() ? (
+            <AddressPicker token={getToken()!} selectedId={address?.id ?? null} onSelect={setAddress} />
+          ) : (
+            <p className="text-sm text-muted">
+              <button onClick={() => router.push(`/login?next=/salons/${id}/book`)} className="underline">
+                Log in
+              </button>{' '}
+              to pick a saved address.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="mt-5">
         <SlotPicker
           businessId={id}
@@ -141,6 +222,8 @@ export default function BookPage() {
           workingHours={business?.workingHours}
           selected={selectedSlot}
           onSelect={setSelectedSlot}
+          preferredStaffId={effectiveStaffId || undefined}
+          homeService={homeVisit}
         />
       </div>
 
@@ -173,7 +256,7 @@ export default function BookPage() {
         <div className="mx-auto max-w-md">
           <button
             onClick={confirmBooking}
-            disabled={!selectedSlot || loading}
+            disabled={!selectedSlot || loading || (homeVisit && !address)}
             className="w-full rounded-xl bg-brand py-3 font-semibold text-brand-foreground disabled:opacity-50"
           >
             {loading

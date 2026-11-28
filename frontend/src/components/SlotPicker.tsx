@@ -99,6 +99,8 @@ export default function SlotPicker({
   selected,
   onSelect,
   hideStart,
+  preferredStaffId,
+  homeService,
 }: {
   businessId: string;
   serviceId: string;
@@ -107,6 +109,10 @@ export default function SlotPicker({
   onSelect: (slot: PickedSlot | null) => void;
   /** e.g. the booking being rescheduled — not offered as a "new" time. */
   hideStart?: string;
+  /** Pre-filter the grid to one stylist — crowd becomes binary (Free/Full). */
+  preferredStaffId?: string;
+  /** Only show stylists who offer home visits. */
+  homeService?: boolean;
 }) {
   const [date, setDate] = useState(localDateIso());
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
@@ -119,12 +125,15 @@ export default function SlotPicker({
     onSelect(null);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag for the fetch below
     setLoading(true);
-    apiFetch<AvailabilityResponse>(`/businesses/${businessId}/availability?serviceId=${serviceId}&date=${date}`)
+    const params = new URLSearchParams({ serviceId, date });
+    if (preferredStaffId) params.set('staffId', preferredStaffId);
+    if (homeService) params.set('homeService', 'true');
+    apiFetch<AvailabilityResponse>(`/businesses/${businessId}/availability?${params.toString()}`)
       .then(setAvailability)
       .catch(() => setAvailability(null))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [businessId, serviceId, date]);
+  }, [businessId, serviceId, date, preferredStaffId, homeService]);
 
   const dayChips = useMemo(
     () =>

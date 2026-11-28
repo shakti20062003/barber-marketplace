@@ -8,6 +8,7 @@ import { getStoredUser, getToken } from '@/lib/auth-client';
 import type { CurrentUser, OwnerBusinessDetail, Service, WorkingHours } from '@/lib/types';
 import WorkingHoursEditor from '@/components/WorkingHoursEditor';
 import { fileToResizedDataUrl, formatHhmm } from '@/lib/image';
+import { coordsFromMapsLink, mapEmbedUrl } from '@/lib/location';
 
 const CUTOFF_OPTIONS = [0, 15, 30, 45, 60, 90, 120];
 
@@ -95,19 +96,6 @@ function BookingHoursSection({
   );
 }
 
-/** Pulls coordinates out of a pasted Google Maps link ("@19.07,72.87" or "q=19.07,72.87"). */
-function coordsFromMapsLink(link: string): { lat: number; lng: number } | null {
-  const m = link.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ?? link.match(/[?&](?:q|query|destination|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
-  if (!m) return null;
-  const lat = Number(m[1]);
-  const lng = Number(m[2]);
-  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
-}
-
-function mapEmbedUrl(lat: number, lng: number) {
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.004}%2C${lat - 0.003}%2C${lng + 0.004}%2C${lat + 0.003}&layer=mapnik&marker=${lat}%2C${lng}`;
-}
-
 function ServiceRow({ service, onPhoto, busy }: { service: Service; onPhoto: (url: string | null) => void; busy: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -159,6 +147,55 @@ function ServiceRow({ service, onPhoto, busy }: { service: Service; onPhoto: (ur
   );
 }
 
+function StaffPhotoButton({
+  staff,
+  onPhoto,
+  busy,
+}: {
+  staff: OwnerBusinessDetail['staff'][number];
+  onPhoto: (url: string | null) => void;
+  busy: boolean;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="shrink-0">
+      <button
+        type="button"
+        onClick={() => ref.current?.click()}
+        disabled={busy}
+        className="relative h-12 w-12 overflow-hidden rounded-full border border-dashed border-border bg-neutral-50 text-[9px] text-muted"
+        aria-label={`Add photo for ${staff.name}`}
+      >
+        {staff.photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={staff.photoUrl} alt={staff.name} className="h-full w-full object-cover" />
+        ) : (
+          <span>+ Photo</span>
+        )}
+      </button>
+      <input
+        ref={ref}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (!file) return;
+          setError(null);
+          try {
+            onPhoto(await fileToResizedDataUrl(file, 800));
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not read image');
+          }
+        }}
+      />
+      {error && <p className="mt-0.5 text-[10px] text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 const STATUS_COPY: Record<OwnerBusinessDetail['verificationStatus'], { label: string; style: string; note: string }> = {
   PENDING: {
     label: 'Pending review',
@@ -193,12 +230,29 @@ export default function OwnerManagePage() {
   const [error, setError] = useState<string | null>(null);
 
   const [serviceForm, setServiceForm] = useState({ name: '', price: '', durationMinutes: '30' });
-  const [staffForm, setStaffForm] = useState({ name: '', experienceYears: '' });
+  const [staffForm, setStaffForm] = useState({
+    name: '',
+    experienceYears: '',
+    specializations: '',
+    languages: '',
+    homeServiceCapable: false,
+  });
+  const [staffPhoneDrafts, setStaffPhoneDrafts] = useState<Record<string, string>>({});
   const [photoUrl, setPhotoUrl] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
   // Which action is in flight, so each button shows its own progress
   // (one shared boolean made "Save location" show "Uploading…" on the photo button).
-  type BusyAction = 'photos' | 'photoLink' | 'location' | 'hours' | 'cutoff' | 'service' | 'servicePhoto' | 'staff';
+  type BusyAction =
+    | 'photos'
+    | 'photoLink'
+    | 'location'
+    | 'hours'
+    | 'cutoff'
+    | 'service'
+    | 'servicePhoto'
+    | 'staff'
+    | 'staffPhoto'
+    | 'staffPhone';
   const [busy, setBusy] = useState<BusyAction | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [location, setLocation] = useState<{ lat: string; lng: string; address: string }>({ lat: '', lng: '', address: '' });
@@ -269,12 +323,78 @@ export default function OwnerManagePage() {
         body: JSON.stringify({
           name: staffForm.name,
           experienceYears: staffForm.experienceYears ? Number(staffForm.experienceYears) : undefined,
+          specializations: staffForm.specializations
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          languages: staffForm.languages
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          homeServiceCapable: staffForm.homeServiceCapable,
         }),
       });
-      setStaffForm({ name: '', experienceYears: '' });
+      setStaffForm({ name: '', experienceYears: '', specializations: '', languages: '', homeServiceCapable: false });
       reload(business.id, token);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add staff member');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function setStaffPhoto(staffId: string, photoUrl: string | null) {
+    if (!token || !business) return;
+    setBusy('staffPhoto');
+    setError(null);
+    try {
+      await apiFetch(`/owner/businesses/${business.id}/staff/${staffId}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ photoUrl }),
+      });
+      reload(business.id, token);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update photo');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleStaffHomeService(staffId: string, homeServiceCapable: boolean) {
+    if (!token || !business) return;
+    setBusy('staffPhoto');
+    setError(null);
+    try {
+      await apiFetch(`/owner/businesses/${business.id}/staff/${staffId}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ homeServiceCapable }),
+      });
+      reload(business.id, token);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update that setting');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveStaffPhone(staffId: string) {
+    if (!token || !business) return;
+    const phone = staffPhoneDrafts[staffId];
+    if (!phone) return;
+    setBusy('staffPhone');
+    setError(null);
+    try {
+      await apiFetch(`/owner/businesses/${business.id}/staff/${staffId}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ phone }),
+      });
+      setStaffPhoneDrafts((d) => ({ ...d, [staffId]: '' }));
+      reload(business.id, token);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save that phone number');
     } finally {
       setBusy(null);
     }
@@ -615,9 +735,47 @@ export default function OwnerManagePage() {
       <Section title={`Staff (${business.staff.length})`}>
         <div className="divide-y divide-border rounded-xl border border-border bg-surface">
           {business.staff.map((s) => (
-            <div key={s.id} className="flex items-center justify-between p-3 text-sm">
-              <span className="font-medium">{s.name}</span>
-              {s.experienceYears != null && <span className="text-muted">{s.experienceYears} yrs</span>}
+            <div key={s.id} className="space-y-2 p-3 text-sm">
+              <div className="flex items-center gap-3">
+                <StaffPhotoButton staff={s} busy={busy === 'staffPhoto'} onPhoto={(url) => setStaffPhoto(s.id, url)} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{s.name}</p>
+                  {s.experienceYears != null && <p className="text-xs text-muted">{s.experienceYears} yrs</p>}
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    s.hasLogin ? 'bg-accent-tint text-accent' : 'bg-neutral-100 text-muted'
+                  }`}
+                >
+                  {s.hasLogin ? '✓ Linked' : 'Not linked yet'}
+                </span>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={s.homeServiceCapable ?? false}
+                  onChange={(e) => toggleStaffHomeService(s.id, e.target.checked)}
+                  className="accent-[var(--brand)]"
+                />
+                Offers home visits
+              </label>
+              {!s.hasLogin && (
+                <div className="flex gap-2">
+                  <input
+                    value={staffPhoneDrafts[s.id] ?? s.phone ?? ''}
+                    onChange={(e) => setStaffPhoneDrafts((d) => ({ ...d, [s.id]: e.target.value }))}
+                    placeholder="Phone, for barber login"
+                    className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+                  />
+                  <button
+                    onClick={() => saveStaffPhone(s.id)}
+                    disabled={busy === 'staffPhone' || !staffPhoneDrafts[s.id]}
+                    className="shrink-0 rounded-lg bg-brand-tint px-3 py-1.5 text-xs font-semibold text-brand-dark disabled:opacity-50"
+                  >
+                    Save phone
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           {business.staff.length === 0 && <p className="p-3 text-sm text-muted">No staff yet.</p>}
@@ -637,6 +795,27 @@ export default function OwnerManagePage() {
             className="w-24 rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm"
           />
         </div>
+        <input
+          value={staffForm.specializations}
+          onChange={(e) => setStaffForm({ ...staffForm, specializations: e.target.value })}
+          placeholder="Specializations, comma-separated (Fades, Beard styling)"
+          className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm"
+        />
+        <input
+          value={staffForm.languages}
+          onChange={(e) => setStaffForm({ ...staffForm, languages: e.target.value })}
+          placeholder="Languages, comma-separated (Hindi, English)"
+          className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm"
+        />
+        <label className="flex items-center gap-2 text-sm text-muted">
+          <input
+            type="checkbox"
+            checked={staffForm.homeServiceCapable}
+            onChange={(e) => setStaffForm({ ...staffForm, homeServiceCapable: e.target.checked })}
+            className="accent-[var(--brand)]"
+          />
+          Offers home visits
+        </label>
         <button
           onClick={addStaff}
           disabled={busy === 'staff' || !staffForm.name}

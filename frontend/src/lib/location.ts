@@ -44,3 +44,16 @@ export function saveLocation(lat: number, lng: number) {
   const value = `${lat.toFixed(4)},${lng.toFixed(4)}`;
   document.cookie = `${LOCATION_COOKIE}=${encodeURIComponent(value)}; Max-Age=${MAX_AGE_SECONDS}; Path=/; SameSite=Lax`;
 }
+
+/** Pulls coordinates out of a pasted Google Maps link ("@19.07,72.87" or "q=19.07,72.87"). */
+export function coordsFromMapsLink(link: string): { lat: number; lng: number } | null {
+  const m = link.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ?? link.match(/[?&](?:q|query|destination|ll)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+}
+
+export function mapEmbedUrl(lat: number, lng: number) {
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.004}%2C${lat - 0.003}%2C${lng + 0.004}%2C${lat + 0.003}&layer=mapnik&marker=${lat}%2C${lng}`;
+}

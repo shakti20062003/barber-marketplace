@@ -63,10 +63,14 @@ export default function MobileTabBar() {
     { href: '/styles', label: 'Styles', icon: 'styles' as const, active: pathname === '/styles' },
     user
       ? {
-          href: user.role === 'OWNER' ? '/owner' : user.role === 'ADMIN' ? '/admin' : '/account',
-          label: user.role === 'OWNER' ? 'My salon' : user.role === 'ADMIN' ? 'Admin' : 'Account',
-          icon: user.role === 'OWNER' ? ('salon' as const) : ('profile' as const),
-          active: pathname.startsWith('/account') || pathname.startsWith('/owner') || pathname.startsWith('/admin'),
+          href: user.role === 'OWNER' ? '/owner' : user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : '/account',
+          label: user.role === 'OWNER' ? 'My salon' : user.role === 'ADMIN' ? 'Admin' : user.role === 'STAFF' ? 'Dashboard' : 'Account',
+          icon: user.role === 'OWNER' || user.role === 'STAFF' ? ('salon' as const) : ('profile' as const),
+          active:
+            pathname.startsWith('/account') ||
+            pathname.startsWith('/owner') ||
+            pathname.startsWith('/admin') ||
+            pathname.startsWith('/staff'),
         }
       : { href: '/login', label: 'Log in', icon: 'profile' as const, active: pathname === '/login' },
   ];

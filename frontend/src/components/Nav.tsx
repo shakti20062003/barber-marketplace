@@ -40,6 +40,11 @@ export default function Nav() {
               My account
             </Link>
           )}
+          {user?.role === 'STAFF' && (
+            <Link href="/staff" className="font-medium text-muted hover:text-foreground">
+              My dashboard
+            </Link>
+          )}
           {user?.role === 'ADMIN' && (
             <Link href="/admin" className="font-medium text-muted hover:text-foreground">
               Admin console
