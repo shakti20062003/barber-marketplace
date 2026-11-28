@@ -4,6 +4,10 @@ import type { SearchResponse } from '@/lib/types';
 import BusinessCard from '@/components/BusinessCard';
 import SearchBar from '@/components/SearchBar';
 import CompareSection from '@/components/CompareSection';
+import Hero from '@/components/Hero';
+import Reveal from '@/components/Reveal';
+import PhotoMarquee from '@/components/PhotoMarquee';
+import PricingSection from '@/components/PricingSection';
 
 import { resolveSearchLocation } from '@/lib/location-server';
 import { RADIUS_OPTIONS } from '@/lib/location';
@@ -38,29 +42,31 @@ export default async function Page(props: PageProps<'/'>) {
   const exploreParams = new URLSearchParams(params);
   exploreParams.delete('limit');
 
+  const marqueeImages = data
+    ? data.results
+        .filter((business) => business.image)
+        .map((business) => ({ src: business.image as string, alt: business.name }))
+    : [];
+
   return (
     <div className="flex flex-1 flex-col">
-      <section className="bg-foreground px-4 pb-6 pt-8 text-white sm:pb-8 sm:pt-12">
-        <div className="mx-auto max-w-5xl">
-          <h1 className="text-2xl font-bold sm:text-3xl">Find a salon near you</h1>
-          <p className="mt-1 text-sm text-white/70">Guaranteed slots. Transparent pricing. No surprises.</p>
-          <Link
-            href="/search"
-            className="mt-4 flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-sm text-muted shadow-sm"
-          >
-            <span aria-hidden>🔍</span>
-            Search salons by name, category or location…
-          </Link>
-        </div>
-      </section>
+      <Hero />
 
-      <section className="border-b border-border bg-surface px-4 py-4">
-        <div className="mx-auto max-w-5xl">
-          <SearchBar basePath="/" showTextInput={false} radiusKm={location.radiusKm} />
-        </div>
-      </section>
+      <Reveal>
+        <section className="border-b border-border bg-surface px-4 py-4">
+          <div className="mx-auto max-w-5xl">
+            <SearchBar basePath="/" showTextInput={false} radiusKm={location.radiusKm} />
+          </div>
+        </section>
+      </Reveal>
 
-      <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-5">
+      {marqueeImages.length > 0 && (
+        <Reveal delayMs={80} className="py-6">
+          <PhotoMarquee images={marqueeImages} />
+        </Reveal>
+      )}
+
+      <Reveal className="mx-auto w-full max-w-5xl flex-1 px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold">✨ Featured near you</h2>
@@ -110,7 +116,11 @@ export default async function Page(props: PageProps<'/'>) {
         </div>
 
         {data && <CompareSection salons={data.results} />}
-      </div>
+      </Reveal>
+
+      <Reveal>
+        <PricingSection />
+      </Reveal>
     </div>
   );
 }

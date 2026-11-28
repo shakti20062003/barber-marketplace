@@ -66,3 +66,40 @@ textarea {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }
+
+/* Premium redesign helpers (2026-11-28) — plain CSS only, no animation
+   library: see CLAUDE.md "frontend conventions" for why. */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee-track {
+  animation: marquee 36s linear infinite;
+}
+
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+.shadow-premium {
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.04),
+    0 12px 32px -8px rgba(28, 25, 23, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none !important;
+  }
+
+  [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}

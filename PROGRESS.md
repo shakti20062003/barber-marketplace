@@ -7,6 +7,64 @@ record even if interrupted) and fill it in as work completes. See
 
 ---
 
+## 2026-11-28 — Premium home redesign, global footer, pricing/membership section (Phase 1 of a larger ask)
+
+**Status: done.** Founder asked for a large bundle in one go: home-visit
+barber booking, individual barber accounts/portfolios, a premium app-wide UI
+restructure (scroll animations, sliding photos), a membership/pricing section,
+and payment-integration scaffolding. Broken into phases before any building,
+per founder's own "discuss home service first" rule already in `CLAUDE.md`/
+`docs/BUSINESS-BRIEF.md`. Decisions made with the founder (see the approved
+plan at the path below for full detail):
+
+- **Build order: premium UI redesign first.** Barber home-visit booking
+  (backend has `HomeServiceArea`/`ServiceLocationType`/`Staff.homeServiceCapable`
+  already reserved in the schema, unused) and barber individual accounts are
+  separate later phases, not touched in this one.
+- **Home-visit safety (for that later phase):** visibility + accountability
+  (salon-verified badge, address confirmation, salon notified when a barber
+  accepts) rather than new ID verification — noted for continuity only.
+- **Pricing section (this phase) shows both** a new illustrative customer
+  membership (Plus/Pro/Premium, presentational only, footnoted "nothing
+  charged today") and the salon-owner tiers that already exist in the schema
+  (`PlanTier`: FREE/PREMIUM/FEATURED, priced per `BUSINESS-BRIEF.md` §5b).
+  No DB writes, no new backend module — every "Choose plan" button is a
+  stub, same spirit as the existing `PAY_NOW` "coming soon" stub.
+
+This phase (frontend-only, zero new npm dependencies — all motion is plain
+CSS + `IntersectionObserver`): new `Footer`, `Hero`, `Reveal`, `PhotoMarquee`,
+`PricingSection` components; `layout.tsx`/`page.tsx`/`globals.css` edited.
+Full plan: `C:\Users\sakti\.claude\plans\harmonic-hatching-pnueli-of-5ac17286-182f-429a-bd5d-d9ae6cb74ddd.md`.
+
+Built and verified against the real dev stack (Postgres/Redis containers
+already running, backend + frontend dev servers started fresh): `tsc --noEmit`
+and `npm run lint` both clean, `git diff frontend/package.json` empty
+(dependency-free as planned), and the live page checked in a real browser —
+hero renders and fades on scroll, the sections reveal on scroll, the photo
+marquee auto-slides with real salon photos, the pricing toggle switches
+between customer/owner tiers with the exact owner numbers from
+`BUSINESS-BRIEF.md` §5b, clicking a "Get started"/"Choose plan" button shows
+the inline "Launching soon" stub with zero network requests (checked via
+console/network, no `fetch` fired), and the footer renders globally (checked
+on `/` and `/login`). One real bug caught by this live check (not by
+`tsc`/lint): `PhotoMarquee.tsx` called `cardImageUrl()` — a plain function
+exported from the `'use client'` file `SmoothImage.tsx` — from what was still
+a server component, which Next.js allows to render as JSX but not to *call*
+directly; fixed by adding `'use client'` to `PhotoMarquee.tsx` itself, since
+it only ever renders inside the already-client `Reveal`/`Hero` tree anyway.
+**Not verified:** true narrow mobile-viewport rendering — the available
+browser-automation tool's window resize didn't actually shrink the window in
+this environment (stayed at desktop width despite reporting success), so the
+390px-width visual check from previous sessions' convention wasn't done this
+time; checked instead that desktop width has no horizontal overflow
+(`scrollWidth === clientWidth`) and that every new class follows the same
+`sm:`-breakpoint convention already used elsewhere in this codebase. Worth a
+real phone check before/soon after this ships. Local dev servers were left
+running (backend on its usual port, frontend on `localhost:3000`) for the
+founder to look at directly.
+
+---
+
 ## 2026-11-15 (3) — Search fixes, owner salon-management page, admin verification console
 
 **Status: done.** Follow-up to the previous two entries, addressing a batch of
