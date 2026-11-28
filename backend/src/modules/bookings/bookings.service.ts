@@ -21,6 +21,7 @@ import {
   fitsWindow,
   formatSalonTime,
   isBlocking,
+  isEngaged,
   reminderPresetsFor,
   startOfLocalDay,
   staffWindowsFor,
@@ -84,12 +85,13 @@ export class BookingsService {
           business: { select: { ownerUserId: true } },
           customer: { select: { name: true } },
           service: { select: { name: true } },
+          staff: { select: { name: true } },
         },
       });
       if (!b) return;
       this.push.notifyUser(b.business.ownerUserId, {
         title,
-        body: `${b.customer.name} · ${b.service.name} · ${this.when(b.slotStart)}${detail ? ` · ${detail}` : ''}`,
+        body: `${b.customer.name} · ${b.service.name} · ${this.when(b.slotStart)}${b.staff ? ` · ${b.staff.name}` : ''}${detail ? ` · ${detail}` : ''}`,
         url: '/owner',
         tag: `booking-${b.id}`,
       });
@@ -143,6 +145,7 @@ export class BookingsService {
     if (!staff || !staff.active) return false;
     const now = new Date();
     if (overlapping.some((b) => isBlocking(b, now))) return false;
+    if (isEngaged(staff, slotStart, now)) return false;
 
     const windows = staffWindowsFor(
       day,
@@ -154,8 +157,15 @@ export class BookingsService {
     return windows.some((w) => fitsWindow(slotStart, slotEnd, w, staff.business.lastBookingCutoffMinutes));
   }
 
-  private async findAnyAvailableStaff(businessId: string, slotStart: Date, slotEnd: Date): Promise<string | null> {
-    const staffList = await this.prisma.staff.findMany({ where: { businessId, active: true } });
+  private async findAnyAvailableStaff(
+    businessId: string,
+    slotStart: Date,
+    slotEnd: Date,
+    requireHomeServiceCapable = false,
+  ): Promise<string | null> {
+    const staffList = await this.prisma.staff.findMany({
+      where: { businessId, active: true, ...(requireHomeServiceCapable ? { homeServiceCapable: true } : {}) },
+    });
     for (const staff of staffList) {
       if (await this.staffAvailableForSlot(staff.id, slotStart, slotEnd)) return staff.id;
     }
@@ -172,8 +182,16 @@ export class BookingsService {
       throw new NotFoundException('Business not found');
     }
     assertPaymentMethodAvailable(dto.paymentMethod);
-    if (dto.serviceLocationType === 'HOME_SERVICE' && !dto.addressId) {
-      throw new BadRequestException('addressId is required for home service bookings');
+    let homeAddress: { formattedAddress: string } | null = null;
+    if (dto.serviceLocationType === 'HOME_SERVICE') {
+      if (!dto.addressId) {
+        throw new BadRequestException('addressId is required for home service bookings');
+      }
+      const address = await this.prisma.address.findUnique({ where: { id: dto.addressId } });
+      if (!address || address.userId !== customerId) {
+        throw new ForbiddenException('This address does not belong to you');
+      }
+      homeAddress = address;
     }
 
     const slotStart = new Date(dto.slotStart);
@@ -223,10 +241,21 @@ export class BookingsService {
 
     try {
       if (staffId) {
+        if (dto.serviceLocationType === 'HOME_SERVICE') {
+          const chosen = await this.prisma.staff.findUnique({ where: { id: staffId } });
+          if (!chosen || !chosen.homeServiceCapable) {
+            throw new ConflictException('This stylist does not offer home visits');
+          }
+        }
         const available = await this.staffAvailableForSlot(staffId, slotStart, slotEnd);
         if (!available) throw new ConflictException('This staff member is not available for that slot');
       } else {
-        staffId = await this.findAnyAvailableStaff(dto.businessId, slotStart, slotEnd);
+        staffId = await this.findAnyAvailableStaff(
+          dto.businessId,
+          slotStart,
+          slotEnd,
+          dto.serviceLocationType === 'HOME_SERVICE',
+        );
         if (!staffId) throw new ConflictException('No staff available for that slot');
       }
 
@@ -272,7 +301,11 @@ export class BookingsService {
         await this.slotLock.release(dto.businessId, lockKeyStaffId, slotStart.toISOString(), lockToken);
       }
 
-      void this.alertOwner(booking.id, '🎉 New booking');
+      void this.alertOwner(
+        booking.id,
+        dto.serviceLocationType === 'HOME_SERVICE' ? '🏠 New home-visit booking' : '🎉 New booking',
+        homeAddress?.formattedAddress,
+      );
 
       // TODO: enqueue confirmation notification to customer + business
       // (FR-4.1 AC: within 5s) once the job queue (BullMQ) is wired up.
@@ -517,6 +550,12 @@ export class BookingsService {
     }
     if (actor.role === 'OWNER' && booking.business.ownerUserId !== actor.id) {
       throw new ForbiddenException('Not your salon');
+    }
+    if (actor.role === 'STAFF') {
+      const staff = await this.prisma.staff.findUnique({ where: { userId: actor.id } });
+      if (!staff || staff.businessId !== booking.businessId) {
+        throw new ForbiddenException('Not your salon');
+      }
     }
     if (booking.status !== 'CONFIRMED' && booking.status !== 'IN_PROGRESS') {
       throw new BadRequestException(`Cannot complete a booking in status ${booking.status}`);

@@ -6,7 +6,14 @@ import type { AuthenticatedUser } from './strategies/jwt.strategy.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { AuthService } from './auth.service.js';
 import { RateLimit } from '../../common/rate-limit/rate-limit.js';
-import { sendOtpSchema, verifyOtpSchema, type SendOtpDto, type VerifyOtpDto } from './dto/otp.dto.js';
+import {
+  sendOtpSchema,
+  verifyOtpSchema,
+  verifyStaffOtpSchema,
+  type SendOtpDto,
+  type VerifyOtpDto,
+  type VerifyStaffOtpDto,
+} from './dto/otp.dto.js';
 
 const googleLoginSchema = z.object({
   credential: z.string().min(20).max(5000),
@@ -55,5 +62,13 @@ export class AuthController {
   @Post('otp/verify')
   verify(@Body(new ZodValidationPipe(verifyOtpSchema)) dto: VerifyOtpDto) {
     return this.auth.verifyOtp(dto);
+  }
+
+  /** Barber login — identity comes from a Staff row an owner already created, never self-registration. */
+  @Public()
+  @RateLimit({ name: 'otp-verify-staff-ip', limit: 30, windowSeconds: 600, by: 'ip' })
+  @Post('otp/verify-staff')
+  verifyStaff(@Body(new ZodValidationPipe(verifyStaffOtpSchema)) dto: VerifyStaffOtpDto) {
+    return this.auth.verifyStaffOtp(dto);
   }
 }

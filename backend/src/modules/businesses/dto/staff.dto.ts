@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeIndianPhone } from '../../../common/validation/phone.js';
 
 export const createStaffSchema = z.object({
   name: z.string().min(1).max(150),
@@ -12,6 +13,16 @@ export type CreateStaffDto = z.infer<typeof createStaffSchema>;
 
 export const updateStaffSchema = createStaffSchema.partial().extend({
   active: z.boolean().optional(),
+  // Assigning a login number is a separate, deliberate action after the
+  // staff profile already exists — not part of create.
+  phone: z
+    .string()
+    .transform((v, ctx) => {
+      const n = normalizeIndianPhone(v);
+      if (!n) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid 10-digit mobile number' });
+      return n ?? '';
+    })
+    .optional(),
 });
 export type UpdateStaffDto = z.infer<typeof updateStaffSchema>;
 

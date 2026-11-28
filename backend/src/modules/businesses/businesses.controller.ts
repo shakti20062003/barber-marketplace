@@ -29,4 +29,10 @@ export class BusinessesController {
   ) {
     return this.businesses.availability(id, query);
   }
+
+  @Public()
+  @Get('staff/:id')
+  findStaff(@Param('id') id: string) {
+    return this.businesses.findStaffById(id);
+  }
 }

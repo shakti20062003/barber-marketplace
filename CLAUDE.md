@@ -35,8 +35,12 @@ update the matching section there as well as here.
   (no native apps yet); Google login (phone OTP off until paid SMS); in-app
   WebRTC calling instead of Exotel; pay-at-shop only until Razorpay; Style
   Finder shows Great/Good/May-not-suit bands, **never percentages**, and no
-  paid AI; all hairstyles open to everyone; home service **to be discussed
-  before any building**.
+  paid AI; all hairstyles open to everyone; home-visit booking of a
+  **specific** barber (never platform-hired) **approved and in progress**
+  since 2026-11-28 — safety is visibility + accountability only (salon's
+  existing verified badge + an owner push naming the barber and address),
+  deliberately no new ID verification, no real distance/polygon checking,
+  no travel fees, no new booking status, no payment work this round.
 - **Known business risks to raise:** Render free Postgres has historically
   expired ~30 days after creation (created ~2026-11-16), so check it; the 12
   demo salons + demo users are fictional seed data still on the live site,
@@ -331,6 +335,38 @@ actually resolves through the workspace symlink.
   - Owner endpoints for a service/staff member now check it belongs to the
     `:id` business. Previously an owner could edit another salon's
     service/staff by ID.
+- **Barber accounts** (added 2026-11-28, `modules/staff/`): a barber never
+  self-registers — `STAFF` logins only exist for a `Staff` row an owner
+  already created and assigned a `phone` to (`PATCH
+  /owner/businesses/:id/staff/:staffId`, phone uniqueness checked against
+  both `User` and other `Staff` rows). First successful
+  `POST /auth/otp/verify-staff` (same on-screen-OTP flow as customer/owner
+  login, gated by the same `PHONE_LOGIN`) links `Staff.userId`; after that,
+  `@Roles('STAFF')` routes under `/staff/me/*` resolve identity from the JWT
+  only, never a route param — a barber can edit experience/specializations/
+  languages/photo and portfolio media, but not `name`/`businessId`/
+  `homeServiceCapable` (owner-only, to prevent impersonation or salon-
+  hopping). `POST /staff/me/engaged` sets/clears `Staff.engagedUntil` (0–240
+  min); `isEngaged()` (`common/scheduling/schedule.ts`, next to
+  `isBlocking`) is checked alongside overlapping bookings in both
+  `staffAvailableForSlot()` and the availability grid. Public profile:
+  `GET /staff/:id` (404s unless the affiliated salon is `VERIFIED`).
+- **Home-visit booking of a specific barber** (added 2026-11-28): a
+  customer can pick a named `Staff` member (`POST /bookings` accepts
+  `staffId`, already existed) and, if that salon has any
+  `HomeServiceArea` rows (`Business.hasHomeService`, presence-only — no
+  real radius/polygon check this phase), book them for
+  `serviceLocationType: 'HOME_SERVICE'` with a saved `Address`
+  (`modules/addresses/`, now a real `GET/POST /addresses`,
+  `DELETE /addresses/:id` CRUD — the `Address` Prisma model existed since
+  MVP but had zero API before this). `findAnyAvailableStaff` and the
+  availability grid (`?homeService=true`) both filter to
+  `homeServiceCapable` staff for home visits. Accountability instead of new
+  ID verification (founder decision): the owner's booking push names the
+  barber and the confirmed address for home-visit bookings
+  (`bookings.service.ts`'s `alertOwner()`). No new booking status, no
+  travel-fee calc (`travelFeeBase`/`travelFeePerKm` stay unused), no
+  payment changes.
 - **Admin console**: every stat tile on `/admin` is clickable and loads its
   list: `GET /admin/businesses?status=PENDING|VERIFIED|REJECTED`,
   `GET /admin/users?role=CUSTOMER|OWNER` and `GET /admin/bookings` (latest 200).
@@ -515,8 +551,7 @@ TODO-commented at their call sites (search `TODO` in `backend/src`):
   confirmation push to the customer right after booking (still TODO-commented
   in `bookings.service.ts`'s `create()`).
 - **Photos** are stored inline in Postgres as data URLs (no object storage).
-- **Not built:** home-service booking (V2, discuss first; schema fields
-  reserved), loyalty / referral / wallet (V2/V3), per-stylist shift editor
+- **Not built:** loyalty / referral / wallet (V2/V3), per-stylist shift editor
   (stylists follow salon hours), multi-salon owners (UI uses the first salon),
   email login.
 - **Security follow-ups** (accepted for launch, see DEVELOPER-GUIDE §10b):
@@ -572,6 +607,22 @@ it per-session with
 `export PATH="/c/Program Files/Docker/Docker/resources/bin:$PATH"` before
 any `docker compose` command, or its credential helper
 (`docker-credential-desktop`) won't be found and image pulls fail.
+
+**`prisma migrate dev` fails in this agent sandbox** ("Prisma Migrate has
+detected that the environment is non-interactive, which is not supported")
+even with `--create-only` — it always needs a TTY. Workaround used
+2026-11-28 for the staff-login migration: generate the SQL yourself with
+`npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script`
+from `database/`, hand-create a timestamped folder under
+`prisma/migrations/<YYYYMMDDHHMMSS>_<name>/migration.sql` with that output,
+then run `npx prisma migrate deploy` (works non-interactively — it only
+applies existing migration folders, never generates or prompts). Also
+remember to `npx prisma generate` from `database/` afterward (not
+`backend/`) per "Prisma client sharing" above, and that a running
+`nest start --watch` process holds the generated query-engine `.dll` open
+on Windows — `prisma generate` fails with `EPERM: operation not permitted,
+rename ...query_engine-windows.dll.node.tmp...` until that process tree is
+killed first.
 
 `database/prisma/seed.js` now seeds 12 fictional dummy salons (not just
 the original one) across two city clusters — Mumbai (the app's fallback

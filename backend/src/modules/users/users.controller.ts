@@ -3,18 +3,10 @@ import { z } from 'zod';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { imageUrlSchema } from '../../common/validation/image-url.js';
+import { normalizeIndianPhone } from '../../common/validation/phone.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy.js';
 import { RateLimit } from '../../common/rate-limit/rate-limit.js';
-
-/** "98765 43210" / "098765-43210" / "+91 98765 43210" → "+919876543210". */
-function normalizeIndianPhone(raw: string): string | null {
-  const digits = raw.replace(/[\s()-]/g, '');
-  if (/^\+[1-9]\d{7,14}$/.test(digits)) return digits;
-  const local = digits.replace(/^0/, '');
-  if (/^[6-9]\d{9}$/.test(local)) return `+91${local}`;
-  return null;
-}
 
 const updateMeSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { boundingBox, haversineDistanceKm } from '../../common/geo/haversine.js';
@@ -17,6 +17,7 @@ import {
   dbDateFor,
   fitsWindow,
   isBlocking,
+  isEngaged,
   isPastGrace,
   isOpenAt,
   localDayStart,
@@ -161,6 +162,7 @@ export class BusinessesService {
           take: 20,
           include: { media: true, customer: { select: { name: true } } },
         },
+        homeServiceAreas: { select: { id: true } },
       },
     });
     if (!business || business.verificationStatus !== 'VERIFIED') {
@@ -168,12 +170,33 @@ export class BusinessesService {
       throw new NotFoundException('Business not found');
     }
     const achievements = await this.achievementsFor(business.id, business.createdAt);
+    // Radius/polygon/travel-fee stay internal (unused this phase) — only
+    // whether home service exists at all is exposed to the frontend.
+    const { homeServiceAreas, ...rest } = business;
     return {
-      ...business,
+      ...rest,
+      hasHomeService: homeServiceAreas.length > 0,
       openNow: isOpenAt(business.workingHours),
       todayHours: todaysHours(business.workingHours),
       achievements: earnedBadges(achievements),
     };
+  }
+
+  /** Public barber profile — 404s unless the affiliated salon is itself VERIFIED (mirrors findById). */
+  async findStaffById(staffId: string) {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      include: {
+        business: { select: { id: true, name: true, verificationStatus: true, trustBadges: true, city: { select: { name: true } } } },
+        certifications: true,
+        portfolioMedia: true,
+      },
+    });
+    if (!staff || !staff.active || staff.business.verificationStatus !== 'VERIFIED') {
+      throw new NotFoundException('Staff member not found');
+    }
+    const { userId: _userId, ...rest } = staff;
+    return rest;
   }
 
   /** Full achievement list (earned + progress) from all-time reviews and completed visits. */
@@ -203,7 +226,7 @@ export class BusinessesService {
 
   async findForOwner(businessId: string, ownerUserId: string) {
     await this.assertOwnership(businessId, ownerUserId);
-    return this.prisma.business.findUnique({
+    const business = await this.prisma.business.findUnique({
       where: { id: businessId },
       include: {
         city: true,
@@ -212,6 +235,11 @@ export class BusinessesService {
         staff: true,
       },
     });
+    if (!business) return business;
+    return {
+      ...business,
+      staff: business.staff.map(({ userId, ...s }) => ({ ...s, hasLogin: !!userId })),
+    };
   }
 
   async assertOwnership(businessId: string, ownerUserId: string) {
@@ -258,6 +286,15 @@ export class BusinessesService {
     await this.assertOwnership(businessId, ownerUserId);
     const existing = await this.prisma.staff.findUnique({ where: { id: staffId } });
     if (!existing || existing.businessId !== businessId) throw new NotFoundException('Staff member not found');
+    if (dto.phone && dto.phone !== existing.phone) {
+      const [takenByUser, takenByStaff] = await Promise.all([
+        this.prisma.user.findUnique({ where: { phone: dto.phone } }),
+        this.prisma.staff.findUnique({ where: { phone: dto.phone } }),
+      ]);
+      if (takenByUser || (takenByStaff && takenByStaff.id !== staffId)) {
+        throw new ConflictException('This phone number is already registered to a different account.');
+      }
+    }
     return this.prisma.staff.update({ where: { id: staffId }, data: dto });
   }
 
@@ -300,7 +337,12 @@ export class BusinessesService {
     }
 
     const staffList = await this.prisma.staff.findMany({
-      where: query.staffId ? { id: query.staffId, businessId, active: true } : { businessId, active: true },
+      where: {
+        businessId,
+        active: true,
+        ...(query.staffId ? { id: query.staffId } : {}),
+        ...(query.homeService ? { homeServiceCapable: true } : {}),
+      },
       include: { availability: true },
     });
     if (query.staffId && staffList.length === 0) {
@@ -344,6 +386,7 @@ export class BusinessesService {
     const salonBreaks = breaksFor(business.workingHours, day);
     const staffWindows = staffList.map((s) => ({
       id: s.id,
+      engagedUntil: s.engagedUntil,
       windows: staffWindowsFor(
         day,
         businessWindow,
@@ -367,7 +410,9 @@ export class BusinessesService {
       );
       if (working.length === 0) continue;
       const free = working.filter(
-        (s) => !blocking.some((b) => b.staffId === s.id && start < b.slotEnd && end > b.slotStart),
+        (s) =>
+          !blocking.some((b) => b.staffId === s.id && start < b.slotEnd && end > b.slotStart) &&
+          !isEngaged(s, start, now),
       );
       grid.push({
         start: start.toISOString(),

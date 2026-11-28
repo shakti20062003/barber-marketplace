@@ -21,6 +21,8 @@ import { PaymentsModule } from './modules/payments/payments.module.js';
 import { StylesModule } from './modules/styles/styles.module.js';
 import { PushModule } from './common/push/push.module.js';
 import { CallsModule } from './modules/calls/calls.module.js';
+import { StaffModule } from './modules/staff/staff.module.js';
+import { AddressesModule } from './modules/addresses/addresses.module.js';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.js';
 
 @Module({
@@ -40,6 +42,8 @@ import { RateLimitGuard } from './common/rate-limit/rate-limit.js';
     StylesModule,
     PushModule,
     CallsModule,
+    StaffModule,
+    AddressesModule,
   ],
   controllers: [AppController],
   providers: [

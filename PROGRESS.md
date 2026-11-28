@@ -7,6 +7,81 @@ record even if interrupted) and fill it in as work completes. See
 
 ---
 
+## 2026-11-28 (3) — Phase 2: barber accounts + specific-barber home-visit booking
+
+Phase 2 of the founder's original ask (Phase 1, the premium redesign,
+shipped earlier today). Lets a customer book a *specific* barber instead of
+"any available", and book that barber for a *home visit* — without the
+platform hiring barbers directly; a bookable barber must already be `Staff`
+at an already-verified salon. Full approved plan at
+`C:\Users\sakti\.claude\plans\harmonic-hatching-pnueli-of-5ac17286-182f-429a-bd5d-d9ae6cb74ddd.md`.
+Scope deliberately excludes this round: real distance/polygon checks against
+`HomeServiceArea`, travel-fee calculation, any new booking status, any
+payment work, real SMS.
+
+**Status: backend done through plan sections 1–4, plus the backend half of
+section 6 (addresses + home-service exposure); frontend (sections 5, 7, and
+the home-visit UI half of 6) not started yet.** Done so far, each
+type-checked, linted (`oxlint`), and confirmed via a real `nest build` +
+`node dist/main.js` boot (all new routes mapped, DI graph resolves, Prisma
+connects):
+
+- **Schema** (`database/prisma/schema.prisma`, migration
+  `20261128120620_add_staff_login_and_engaged_status`, applied via
+  `prisma migrate deploy` — `prisma migrate dev` doesn't work in this
+  non-interactive sandbox, so the SQL was generated with `prisma migrate
+  diff --from-url ... --script` and dropped into a hand-made migration
+  folder instead): `Staff.phone`/`userId`/`engagedUntil`, `User.staffProfile`.
+  `isEngaged()` added next to `isBlocking()` in
+  `common/scheduling/schedule.ts`, wired into both
+  `bookings.service.ts`'s `staffAvailableForSlot()` and
+  `businesses.service.ts`'s `availability()`'s free-slot filter.
+- **Barber login**: `POST /auth/otp/verify-staff` (`auth.service.ts`'s new
+  `verifyStaffOtp()`, reusing a `consumeOtp()` helper extracted out of the
+  existing `verifyOtp()`) — looks up the phone against `Staff`, links or
+  reuses the `User` row, 403s if no salon has registered that number.
+  `normalizeIndianPhone` extracted out of `users.controller.ts` into
+  `common/validation/phone.ts` so `updateStaffSchema`'s new optional `phone`
+  field reuses it. `businesses.service.ts`'s `updateStaff()` now rejects a
+  phone already claimed by another `User` or `Staff` row, and
+  `findForOwner()` returns `hasLogin` per staff member instead of the raw
+  `userId`.
+- **Barber's own endpoints**: new `StaffModule`
+  (`backend/src/modules/staff/`) — `GET/PATCH /staff/me`,
+  `POST /staff/me/engaged`, `POST`/`DELETE /staff/me/portfolio[/:mediaId]`,
+  `GET /staff/me/bookings`, all `@Roles('STAFF')` and resolving identity
+  from the JWT only. Fixed a real bug while this module landed:
+  `bookings.service.ts`'s `complete()` checked `actor.role === 'STAFF'` but
+  never verified the STAFF actor's own salon matched the booking's salon —
+  any barber could complete any salon's booking. Now checks
+  `staff.businessId === booking.businessId`.
+- **Public barber profile**: `GET /staff/:id` (`businesses.service.ts`'s
+  `findStaffById()`), 404s unless the affiliated salon is `VERIFIED`.
+- **Addresses** (previously a schema-only model with zero API): new
+  `AddressesModule` — `GET/POST /addresses`, `DELETE /addresses/:id`
+  (ownership-checked, and a FK-constraint delete against an address still
+  referenced by a booking now returns a friendly 409 instead of a raw 500).
+- **Home-visit booking correctness fixes in `bookings.service.ts create()`**
+  (these gaps existed before this phase and would have shipped a real bug):
+  address-ownership check before accepting `addressId` (was missing
+  entirely); `findAnyAvailableStaff` now filters `homeServiceCapable` for
+  HOME_SERVICE bookings; an explicit `dto.staffId` + HOME_SERVICE now checks
+  that staff member's capability before the scheduling check; `alertOwner()`
+  pushes `'🏠 New home-visit booking'` with the staff name + confirmed
+  address for home visits (salon gets visibility into who's going where —
+  the agreed "accountability" safety measure, no new ID verification).
+  `availabilityQuerySchema` gained an optional `homeService` filter
+  (mirrors the existing `staffId` one); `businesses.service.ts`'s
+  `findById()` now derives `hasHomeService: boolean` from
+  `homeServiceAreas.length > 0` without exposing the raw rows.
+
+Next: frontend — specific-barber picker on the booking page (§5), the
+`/staff` barber dashboard + login page + `Nav`/`MobileTabBar` STAFF
+branches (§7), and the home-visit toggle/address picker on the booking page
+(§6's frontend half) — then a full manual end-to-end pass before pushing.
+
+---
+
 ## 2026-11-28 (2) — Follow-up fixes to the premium redesign from founder feedback
 
 **Status: done.** Founder tried the pushed redesign live and reported three

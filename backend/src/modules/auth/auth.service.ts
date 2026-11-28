@@ -15,7 +15,7 @@ import { createHash, randomInt } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../common/redis/redis.module.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { SendOtpDto, VerifyOtpDto } from './dto/otp.dto.js';
+import type { SendOtpDto, VerifyOtpDto, VerifyStaffOtpDto } from './dto/otp.dto.js';
 import { GoogleIdTokenVerifier, GoogleTokenError } from './google-id-token.js';
 import type { User } from 'database';
 
@@ -231,7 +231,12 @@ export class AuthService {
     return { sent: true, devOtp: isProd ? undefined : code };
   }
 
-  async verifyOtp({ phone, code, name, role }: VerifyOtpDto) {
+  /**
+   * Redis lookup → attempts check → hash check → single-use delete. Shared
+   * by the customer/owner verify endpoint and the staff one below, so both
+   * enforce the same expiry/attempts/rate-limit rules identically.
+   */
+  private async consumeOtp(phone: string, code: string): Promise<void> {
     if (!this.phoneLoginEnabled()) {
       throw new ForbiddenException('Phone login is not available yet. Please continue with Google.');
     }
@@ -261,6 +266,10 @@ export class AuthService {
 
     // Single-use: OTP is consumed on successful verification.
     await this.redis.del(this.otpKey(phone));
+  }
+
+  async verifyOtp({ phone, code, name, role }: VerifyOtpDto) {
+    await this.consumeOtp(phone, code);
 
     let user = await this.prisma.user.findUnique({ where: { phone } });
     if (!user) {
@@ -278,6 +287,40 @@ export class AuthService {
       if (user.role === 'CUSTOMER') {
         await this.prisma.customerProfile.create({ data: { userId: user.id } });
       }
+    }
+
+    return this.issue(user);
+  }
+
+  /**
+   * A barber never self-registers: this only ever logs in to a `Staff` row
+   * an owner already created and assigned a phone to (FR-1.2 — role is
+   * permanent, so STAFF accounts can only come from a salon vouching for
+   * someone, never a public "I am a barber" signup).
+   */
+  async verifyStaffOtp({ phone, code }: VerifyStaffOtpDto) {
+    await this.consumeOtp(phone, code);
+
+    const staff = await this.prisma.staff.findUnique({ where: { phone } });
+    if (!staff) {
+      throw new ForbiddenException(
+        'This phone number is not registered as staff by any salon. Ask your salon owner to add you.',
+      );
+    }
+
+    let user = staff.userId ? await this.prisma.user.findUnique({ where: { id: staff.userId } }) : null;
+    if (!user) {
+      try {
+        user = await this.prisma.user.create({
+          data: { phone, name: staff.name, role: 'STAFF', authProvider: 'PHONE_OTP', phoneVerified: true },
+        });
+      } catch (err) {
+        if ((err as { code?: string }).code === 'P2002') {
+          throw new ConflictException('This phone number is already registered to a different Trimly account.');
+        }
+        throw err;
+      }
+      await this.prisma.staff.update({ where: { id: staff.id }, data: { userId: user.id } });
     }
 
     return this.issue(user);

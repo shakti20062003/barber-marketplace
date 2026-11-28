@@ -238,3 +238,13 @@ export function isBlocking(
 export function isPastGrace(booking: { status: BookingStatus; slotStart: Date }, now: Date = new Date()): boolean {
   return booking.status === 'CONFIRMED' && now.getTime() > booking.slotStart.getTime() + LATE_GRACE_MINUTES * 60_000;
 }
+
+/**
+ * A barber can mark themselves "engaged" (e.g. with a walk-in or running
+ * long) for a stretch of time from their own dashboard. A slot starting
+ * before that stretch ends is treated as unavailable, the same as an
+ * overlapping booking — this is a manual status, never auto-cleared.
+ */
+export function isEngaged(staff: { engagedUntil: Date | null }, slotStart: Date, now: Date = new Date()): boolean {
+  return !!staff.engagedUntil && staff.engagedUntil > now && slotStart < staff.engagedUntil;
+}

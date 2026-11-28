@@ -143,6 +143,7 @@ model User {
   customerProfile CustomerProfile?
   addresses       Address[]
   businesses      Business[]         @relation("BusinessOwner")
+  staffProfile    Staff?             @relation("StaffUser")
   bookingsAsCustomer Booking[]       @relation("BookingCustomer")
   reviews         Review[]
   notifications   NotificationLog[]
@@ -327,8 +328,15 @@ model Staff {
   // reserved for Â§7.5 home-service future-proofing â€” unused at MVP
   homeServiceCapable Boolean  @default(false)
   active             Boolean  @default(true)
+  // owner-assigned login number for the barber's own account (distinct from `name`)
+  phone              String?  @unique
+  // linked on first successful staff OTP verify (POST /auth/otp/verify-staff)
+  userId             String?  @unique
+  // "busy until" — set/cleared by the barber from their own dashboard
+  engagedUntil       DateTime?
 
   business        Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user            User?                  @relation("StaffUser", fields: [userId], references: [id])
   certifications  StaffCertification[]
   portfolioMedia  StaffPortfolioMedia[]
   availability    StaffAvailability[]

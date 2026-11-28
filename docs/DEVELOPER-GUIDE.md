@@ -412,6 +412,14 @@ with a local fake push service that decrypts what we send.
   admin, or creates one).
 - `AccountLinks` (account, owner and admin pages): mobile number +
   Connect Google.
+- **Barbers (added 2026-11-28):** never self-register. An owner assigns a
+  `Staff` row a `phone` (`PATCH /owner/businesses/:id/staff/:staffId`,
+  checked unique against both `User` and `Staff`). `POST
+  /auth/otp/verify-staff {phone, code}` reuses the same on-screen-OTP
+  mechanics as customer/owner login (same `PHONE_LOGIN` gate), but 403s if
+  no `Staff` row has that phone, and links `Staff.userId` on first success
+  instead of taking a `role`/`name` from the request — a `STAFF` account's
+  identity is entirely the salon's own `Staff` row, never user input.
 
 ### 7.2d In-app calling (free) — `modules/calls`, `app/call/[id]`
 
@@ -648,16 +656,23 @@ Frontend conventions:
 | `POST /auth/google/link` | any | Attach Google to the signed-in account |
 | `POST /auth/otp/send` | 🔓 | Send OTP `{phone}` (3 per 10 min; returns `devOtp` in dev; 403 when `PHONE_LOGIN=off`) |
 | `POST /auth/otp/verify` | 🔓 | `{phone, code, name?, role?}` → `{accessToken, user}` |
+| `POST /auth/otp/verify-staff` | 🔓 | `{phone, code}` → `{accessToken, user}`. Barber login — 403 unless an owner already created a `Staff` row with this phone; no self-registration |
 | `GET /users/me` · `PATCH /users/me` | any | Profile (+ `googleLinked`); update `name`, `email`, `avatarUrl`, `phone` (unique, 409 if taken) |
+| `GET /staff/:id` | 🔓 | Public barber profile (404 unless the affiliated salon is `VERIFIED`) |
+| `GET /staff/me` · `PATCH /staff/me` | staff | Own profile; editable: `experienceYears`, `specializations`, `languages`, `photoUrl` only (not `name`/`businessId`/`homeServiceCapable`) |
+| `POST /staff/me/engaged` | staff | `{minutes: 0-240}` — sets/clears `engagedUntil` (0 clears) |
+| `POST /staff/me/portfolio` · `DELETE /staff/me/portfolio/:mediaId` | staff | Portfolio photos (`{url, type: 'PORTFOLIO'\|'BEFORE_AFTER'}`) |
+| `GET /staff/me/bookings` | staff | My upcoming/past bookings |
+| `GET /addresses` · `POST /addresses` · `DELETE /addresses/:id` | customer | Saved home-visit addresses (ownership-checked; delete 409s if a booking still references it) |
 | `POST /calls` · `GET /calls/:id` · `POST /calls/:id/{offer,answer,decline,end}` · `GET /calls/ice-servers` | customer / owner of the booking | In-app calling |
 | `GET /search/businesses` | 🔓 | `lat, lng, radiusKm, category, q, openNow, minRating, page, limit` |
 | `GET /businesses/:id` | 🔓 | Verified salon detail (+ `openNow`, `todayHours`) |
-| `GET /businesses/:id/availability` | 🔓 | `serviceId, date (YYYY-MM-DD), staffId?` → `{closed, hours, grid[], slots[]}` |
+| `GET /businesses/:id/availability` | 🔓 | `serviceId, date (YYYY-MM-DD), staffId?, homeService?` → `{closed, hours, grid[], slots[]}` |
 | `GET /businesses/:id/reviews` | 🔓 | Reviews |
 | `GET /cities` · `GET /categories` | 🔓 | Catalog |
 | `GET /styles?gender=MEN\|WOMEN` | 🔓 | Style Finder catalogue (active styles) |
 | `GET /admin/styles` · `POST /admin/styles` · `PATCH /admin/styles/:id` | admin | Manage styles (`imageUrl`, `active`, `faceShapeFit`, …) |
-| `POST /bookings` | customer | Create `{businessId, serviceId, staffId?, slotStart, paymentMethod:'PAY_AT_SHOP'}` → returns `otp` |
+| `POST /bookings` | customer | Create `{businessId, serviceId, staffId?, slotStart, paymentMethod:'PAY_AT_SHOP', serviceLocationType?:'IN_SALON'\|'HOME_SERVICE', addressId?}` → returns `otp`. Home visit requires an owned `addressId` and (if `staffId` given) a `homeServiceCapable` stylist; owner is pushed the barber + address |
 | `GET /bookings/me` | customer | My bookings (with `confirmationCode`, `addOns`, `totalAmount`, `review {rating, text}` once reviewed) |
 | `POST /bookings/:id/add-services` | customer | `{serviceIds[]}` |
 | `POST /bookings/:id/reschedule` | customer | `{slotStart, staffId?}` (before the start time only; alerts the owner) |
@@ -693,8 +708,9 @@ Frontend conventions:
 | `customer_profiles` | `reliabilityScore`, `noShowCountRolling`, `requiresPrepayment` | |
 | `businesses` | `workingHours` (JSON), `lat`, `lng`, `address`, `verificationStatus`, `lastBookingCutoffMinutes`, `cancellationPolicy` | Only `VERIFIED` is public |
 | `services` | `price`, `durationMinutes`, `imageUrl`, `active` | |
-| `staff` / `staff_availability` / `staff_availability_overrides` | weekly windows, per-date overrides | No windows means salon hours |
-| `bookings` | `slotStart`, `slotEnd`, `status`, `otpHash`, `otpCode`, `staffId`, `reminder24hSentAt`, `reminder1hSentAt` | `slotEnd` includes add-ons; reminder fields set by §7.2e |
+| `staff` / `staff_availability` / `staff_availability_overrides` | weekly windows, per-date overrides, `phone` (unique), `userId` (unique), `engagedUntil` | No windows means salon hours; `phone`/`userId`/`engagedUntil` power barber login + "busy until" (§7.2) |
+| `addresses` | `userId`, `label`, `lat`, `lng`, `formattedAddress` | Customer's saved home-visit addresses; referenced by `bookings.addressId` |
+| `bookings` | `slotStart`, `slotEnd`, `status`, `otpHash`, `otpCode`, `staffId`, `reminder24hSentAt`, `reminder1hSentAt`, `serviceLocationType`, `addressId` | `slotEnd` includes add-ons; reminder fields set by §7.2e; `serviceLocationType`/`addressId` power home-visit bookings |
 | `booking_add_ons` | `bookingId`, `serviceId`, `price`, `durationMinutes` | Price copied at the time it's added |
 | `payments` | `amount`, `status`, `provider` (`cash`/`razorpay`) | Amount grows with add-ons while unpaid |
 | `push_subscriptions` | `userId`, `endpoint` (unique), `p256dh`, `auth` | Devices receiving web push |
@@ -751,10 +767,11 @@ Controls in place. **Keep them when changing code.**
 | Calling | Free in-app WebRTC calls live (signalling tested); real two-phone audio not yet tested | Test on two phones; add TURN if some networks fail. Exotel phone-network masking is still optional/paid |
 | SMS | None (phone OTP is test-only) | DLT-registered SMS provider (paid) when affordable; then `PHONE_LOGIN=on` with real SMS and `NODE_ENV=production` |
 | Notifications | Owner push alerts (book/change/cancel/add-on), customer "salon cancelled", and customer pre-visit reminders (T-24h/T-1h, §7.2e) live | Waitlist alerts, SMS fallback, a booking-confirmation push to the customer (still TODO in `bookings.service.ts`) |
-| Home-service bookings | Not started (founder wants to discuss first: privacy/safety, stylist-wise pricing, payments) | Schema fields exist (`serviceLocationType`, `HomeServiceArea`) |
+| Home-visit booking of a specific barber | Backend done (barber login/engaged status/portfolio, addresses CRUD, capability + ownership checks, owner accountability push); frontend not started (plan §5–7) | Build the booking-page stylist picker, home-visit toggle/address picker, and the `/staff` barber dashboard |
+| Home-service areas (real geo) | Presence-only gate (`hasHomeService`); no radius/polygon check or travel fee | Use `HomeServiceArea.radiusKm`/`polygon`, `travelFeeBase`/`travelFeePerKm` once needed |
 | Image storage | Inline data URLs in Postgres | Cloudinary/S3 |
 | Rate limiting | Only OTP routes | `@nestjs/throttler` doesn't support Nest 12 yet |
-| Google/email login, home-service bookings, loyalty/referrals/wallet | Not built | V2/V3 per PRD |
+| Google/email login, loyalty/referrals/wallet | Not built | V2/V3 per PRD |
 | Per-stylist shifts / days off | Data model + scheduling support it, no owner UI | Add a staff-hours editor (all stylists follow salon hours today) |
 | Style Finder photos | Free Unsplash starter photos | Replace with own salon photos over time (Admin → Style Finder catalogue) |
 | Multi-salon owners | UI uses the owner's first salon | Salon switcher |

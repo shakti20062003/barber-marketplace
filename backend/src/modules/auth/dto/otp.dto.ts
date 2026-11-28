@@ -17,3 +17,11 @@ export const verifyOtpSchema = z.object({
   role: z.enum(['CUSTOMER', 'OWNER']).default('CUSTOMER'),
 });
 export type VerifyOtpDto = z.infer<typeof verifyOtpSchema>;
+
+// Barbers never self-register — no name/role here. Identity comes entirely
+// from the Staff row an owner already created and assigned this phone to.
+export const verifyStaffOtpSchema = z.object({
+  phone: phoneSchema,
+  code: z.string().length(6),
+});
+export type VerifyStaffOtpDto = z.infer<typeof verifyStaffOtpSchema>;
