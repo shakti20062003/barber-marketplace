@@ -7,6 +7,45 @@ record even if interrupted) and fill it in as work completes. See
 
 ---
 
+## 2026-11-28 (2) — Follow-up fixes to the premium redesign from founder feedback
+
+**Status: done.** Founder tried the pushed redesign live and reported three
+real issues, all fixed:
+
+- **Photo marquee looked right but couldn't be scrolled manually.** The
+  original `PhotoMarquee` used `overflow-hidden` + a CSS `transform`
+  keyframe purely for the auto-slide effect, which structurally blocks any
+  touch/trackpad scrolling. Rebuilt as a real `overflow-x-auto` strip that
+  auto-advances its own `scrollLeft` via `requestAnimationFrame` instead,
+  pausing the moment a visitor touches/drags/hovers it (pointerdown/
+  touchstart/mouseenter) and resuming after — manual scrolling always wins.
+  Also added a `label` prop so the strip has a heading ("📸 A peek inside
+  salons near you") instead of unexplained photos.
+- **Footer didn't belong on every page, just the home page.** Moved
+  `<Footer />` out of `layout.tsx` into `app/page.tsx` (rendered last, after
+  the pricing section) — it no longer appears on `/login`, `/search`, etc.
+- **Pricing section showed a manual customer/salon-owner toggle — founder
+  pointed out a customer has no reason to see salon pricing at all.**
+  Replaced the toggle with role detection: reads `getStoredUser<CurrentUser>`
+  the same way `Nav.tsx` does, and shows only the customer tiers (incl. for
+  logged-out visitors) or only the salon-owner tiers (`OWNER`/`STAFF`/
+  `ADMIN`) — never both, never a chooser.
+
+Verified: `tsc --noEmit` + `npm run lint` clean, then checked live in a
+browser against the real dev stack — marquee is a genuine scrollable
+`overflow-x-auto` element now (confirmed `scrollWidth > clientWidth`), the
+label renders, footer confirmed absent on `/login` and present on `/`, and
+the pricing section shows only one audience with no toggle UI. Committed and
+pushed to `main` (Render auto-deploys from there) at the founder's request.
+**Not independently re-verified this round:** manual touch-drag on an actual
+phone (the browser tool's own window-resize still doesn't work in this dev
+environment, as noted in the previous entry) — worth the founder confirming
+on their phone that the swipe itself feels right, even though the underlying
+scroll mechanism is now structurally correct (a real `overflow-x-auto`
+element, not blocked by `overflow-hidden`).
+
+---
+
 ## 2026-11-28 — Premium home redesign, global footer, pricing/membership section (Phase 1 of a larger ask)
 
 **Status: done.** Founder asked for a large bundle in one go: home-visit

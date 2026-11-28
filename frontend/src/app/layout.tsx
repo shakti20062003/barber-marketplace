@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Nav from "@/components/Nav";
 import MobileTabBar from "@/components/MobileTabBar";
-import Footer from "@/components/Footer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -43,10 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Nav />
-        <main className="flex flex-1 flex-col pb-20 sm:pb-0">
-          {children}
-          <Footer />
-        </main>
+        <main className="flex flex-1 flex-col pb-20 sm:pb-0">{children}</main>
         <MobileTabBar />
       </body>
     </html>

@@ -69,34 +69,24 @@ textarea {
 
 /* Premium redesign helpers (2026-11-28) — plain CSS only, no animation
    library: see CLAUDE.md "frontend conventions" for why. */
-@keyframes marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-.marquee-track {
-  animation: marquee 36s linear infinite;
-}
-
-.marquee-track:hover {
-  animation-play-state: paused;
-}
-
 .shadow-premium {
   box-shadow:
     0 1px 2px rgba(28, 25, 23, 0.04),
     0 12px 32px -8px rgba(28, 25, 23, 0.12);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .marquee-track {
-    animation: none !important;
-  }
+/* A real horizontally-scrollable strip (PhotoMarquee) with the scrollbar
+   hidden — manual drag/swipe still works, only the visible bar is gone. */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
 
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
   [data-reveal] {
     opacity: 1 !important;
     transform: none !important;

@@ -8,6 +8,7 @@ import Hero from '@/components/Hero';
 import Reveal from '@/components/Reveal';
 import PhotoMarquee from '@/components/PhotoMarquee';
 import PricingSection from '@/components/PricingSection';
+import Footer from '@/components/Footer';
 
 import { resolveSearchLocation } from '@/lib/location-server';
 import { RADIUS_OPTIONS } from '@/lib/location';
@@ -62,7 +63,7 @@ export default async function Page(props: PageProps<'/'>) {
 
       {marqueeImages.length > 0 && (
         <Reveal delayMs={80} className="py-6">
-          <PhotoMarquee images={marqueeImages} />
+          <PhotoMarquee images={marqueeImages} label="📸 A peek inside salons near you" />
         </Reveal>
       )}
 
@@ -121,6 +122,8 @@ export default async function Page(props: PageProps<'/'>) {
       <Reveal>
         <PricingSection />
       </Reveal>
+
+      <Footer />
     </div>
   );
 }

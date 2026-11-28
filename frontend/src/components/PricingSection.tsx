@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getStoredUser } from '@/lib/auth-client';
+import type { CurrentUser } from '@/lib/types';
 
 type Audience = 'customer' | 'owner';
 
@@ -63,42 +65,38 @@ const OWNER_TIERS: Tier[] = [
   },
 ];
 
+/**
+ * Shown per-role, not as a chooser: a customer only ever sees customer
+ * pricing, a salon owner (or staff/admin) only ever sees salon pricing.
+ * Logged-out visitors default to the customer view, since that's who
+ * lands on the home page without an account yet.
+ */
 export default function PricingSection() {
   const [audience, setAudience] = useState<Audience>('customer');
   const [clicked, setClicked] = useState<string | null>(null);
+
+  useEffect(() => {
+    const user = getStoredUser<CurrentUser>();
+    if (user?.role === 'OWNER' || user?.role === 'STAFF' || user?.role === 'ADMIN') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAudience('owner');
+    }
+  }, []);
+
   const tiers = audience === 'customer' ? CUSTOMER_TIERS : OWNER_TIERS;
 
   return (
     <section className="mx-auto w-full max-w-5xl px-4 py-10">
       <div className="text-center">
-        <h2 className="text-xl font-bold sm:text-2xl">Simple pricing</h2>
-        <p className="mt-1 text-sm text-muted">
-          Built for salons today — and soon, for customers who book often.
+        <h2 className="text-xl font-bold sm:text-2xl">
+          {audience === 'customer' ? 'Simple pricing for you' : 'Simple pricing for your salon'}
+        </h2>
+        <p className="mx-auto mt-1 max-w-md text-sm text-muted">
+          {audience === 'customer'
+            ? "A preview of what's coming — nothing is charged today."
+            : 'Built for salons, with no cost to get started.'}
         </p>
       </div>
-
-      <div className="mx-auto mt-5 flex w-fit rounded-full border border-border bg-surface p-1 text-sm font-medium">
-        <button
-          type="button"
-          onClick={() => setAudience('customer')}
-          className={`rounded-full px-4 py-1.5 ${audience === 'customer' ? 'bg-brand text-brand-foreground' : 'text-muted'}`}
-        >
-          For customers
-        </button>
-        <button
-          type="button"
-          onClick={() => setAudience('owner')}
-          className={`rounded-full px-4 py-1.5 ${audience === 'owner' ? 'bg-brand text-brand-foreground' : 'text-muted'}`}
-        >
-          For salon owners
-        </button>
-      </div>
-
-      {audience === 'customer' && (
-        <p className="mx-auto mt-3 max-w-md text-center text-xs text-muted">
-          Customer plans are a preview of what&apos;s coming — nothing is charged today.
-        </p>
-      )}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         {tiers.map((tier) => (

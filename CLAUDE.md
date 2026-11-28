@@ -396,37 +396,48 @@ actually resolves through the workspace symlink.
   existing `BusinessCard`/salon-profile code, and avoids needing a
   `next.config.ts` `images.remotePatterns` allowlist. Keep doing this for
   new components unless there's a specific reason to switch.
-- **Premium home redesign + global footer + pricing section** (added
-  2026-11-28, phase 1 of a larger founder ask — home-visit barber booking and
-  real membership/payments are separate later phases, not built yet): a global
-  `components/Footer.tsx` renders inside `layout.tsx`'s `<main>` after
-  `{children}` (so it's on every route for free, and inherits `<main>`'s
-  existing `pb-20 sm:pb-0` so it's never covered by the fixed mobile tab bar).
-  The home page's hero/sections now use **plain CSS motion, no animation
-  library** (`components/Reveal.tsx` — one-shot `IntersectionObserver`
-  scroll-reveal; `components/Hero.tsx` — scroll-position-driven fade/scale,
-  no `position: fixed`; `components/PhotoMarquee.tsx` — CSS `@keyframes
-  marquee` auto-slide of real `business.image` photos, pause-on-hover via
-  plain `:hover`) — keep doing this (zero new deps) rather than reaching for
-  `framer-motion`/`gsap`/a carousel library, both because this app is
-  mobile-first/bundle-size-conscious and because any new npm dependency risks
-  the Linux-native-binary lockfile gotcha above. New keyframes/utility classes
-  live in `globals.css` (`.marquee-track`, `.shadow-premium`,
+- **Premium home redesign + footer + pricing section** (added 2026-11-28,
+  phase 1 of a larger founder ask — home-visit barber booking and real
+  membership/payments are separate later phases, not built yet; revised same
+  day after founder feedback on the first pass). `components/Footer.tsx`
+  renders **only on the home page** (`app/page.tsx`, as the last element),
+  not in `layout.tsx` — the founder explicitly wants it on `/` only, not
+  every route. The home page's hero/sections use **plain CSS motion, no
+  animation library** (`components/Reveal.tsx` — one-shot
+  `IntersectionObserver` scroll-reveal; `components/Hero.tsx` —
+  scroll-position-driven fade/scale, no `position: fixed`) — keep doing this
+  (zero new deps) rather than reaching for `framer-motion`/`gsap`, both
+  because this app is mobile-first/bundle-size-conscious and because any new
+  npm dependency risks the Linux-native-binary lockfile gotcha above.
+  `components/PhotoMarquee.tsx` is a **real horizontally-scrollable
+  `overflow-x-auto` strip** (manual touch/trackpad scroll must work — an
+  earlier version used `overflow-hidden` + a CSS `transform` keyframe, which
+  looked right but made it impossible to scroll manually, per direct founder
+  feedback; don't regress to that), that also auto-advances slowly via a
+  `requestAnimationFrame` loop nudging `scrollLeft`, pausing on
+  pointerdown/touchstart/mouseenter so manual scrolling always wins — needs a
+  `label` prop (shown as a heading above it) so it's never unexplained photos.
+  New utility classes live in `globals.css` (`.scrollbar-hide` hides the
+  scrollbar without disabling scroll, `.shadow-premium`,
   `@media (prefers-reduced-motion: reduce)`), not a new theme file. `Hero`,
-  `Reveal`'s one-shot animation, and `PhotoMarquee`'s photo resize helper
-  (`cardImageUrl` from `SmoothImage.tsx`) all need `'use client'` — a plain
-  function exported from a `'use client'` file can be rendered as JSX from a
-  server component but **cannot be called directly** from one; `PhotoMarquee`
-  originally omitted `'use client'` and crashed at runtime with "Attempted to
-  call cardImageUrl() from the server" despite type-checking and linting
-  clean — only showed up once actually run against real data in a browser.
-  `components/PricingSection.tsx` shows **both** a new illustrative customer
-  membership (Plus/Pro/Premium, footnoted "nothing is charged today") and the
-  existing salon-owner `PlanTier` tiers (Free/Premium/Featured, numbers from
-  `docs/BUSINESS-BRIEF.md` §5b) behind an audience toggle; every button is a
-  presentational stub (shows an inline "Launching soon" note, fires no
-  request) since no customer membership backend model exists — don't wire it
-  to a real endpoint without building that model first.
+  `Reveal`, and `PhotoMarquee` all need `'use client'` — a plain function
+  exported from a `'use client'` file (`cardImageUrl` from `SmoothImage.tsx`)
+  can be rendered as JSX from a server component but **cannot be called
+  directly** from one; `PhotoMarquee` originally omitted `'use client'` and
+  crashed at runtime with "Attempted to call cardImageUrl() from the server"
+  despite type-checking and linting clean — only showed up once actually run
+  against real data in a browser.
+  `components/PricingSection.tsx` shows **only one audience's tiers, chosen
+  by the viewer's actual role, not a manual toggle** (the founder was
+  explicit: a customer shouldn't see salon-owner pricing or vice versa) —
+  reads `getStoredUser<CurrentUser>()` the same way `Nav.tsx` does; `OWNER`/
+  `STAFF`/`ADMIN` see the salon tiers, everyone else (incl. logged-out
+  visitors) sees the customer tiers. Customer tiers (Plus/Pro/Premium) are
+  new/illustrative, footnoted "nothing is charged today"; owner tiers reuse
+  the real `PlanTier` names + `docs/BUSINESS-BRIEF.md` §5b numbers verbatim.
+  Every button is a presentational stub (inline "Launching soon" note, fires
+  no request) since no customer membership backend model exists — don't wire
+  it to a real endpoint without building that model first.
 - **Post-login routing is role-based, not a flat `/`.** Customers land on
   `/account` (profile + booking history, `src/app/account/page.tsx`);
   owners land on `/owner` (salon setup / dashboard, with a link through to
